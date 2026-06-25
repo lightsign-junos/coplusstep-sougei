@@ -98,7 +98,7 @@ export function Dashboard() {
           className="flex items-center gap-2 px-4 py-2 bg-pink-500 text-white text-sm font-medium rounded-lg hover:bg-pink-600 cursor-pointer transition-colors"
         >
           <Calendar size={16} />
-          日別送迎表を見る
+          週次送迎表を見る
         </button>
         <button
           onClick={() => setShowAbsentModal(true)}

@@ -7,7 +7,7 @@ import { useDataStore } from '../../store/dataStore';
 
 const NAV_ITEMS = [
   { to: '/', icon: LayoutDashboard, label: 'ダッシュボード', exact: true },
-  { to: '/daily', icon: Calendar, label: '日別送迎表' },
+  { to: '/daily', icon: Calendar, label: '週次送迎表' },
   { to: '/monthly', icon: CalendarDays, label: '月別シフト' },
   { to: '/routes', icon: Map, label: 'ルートマスタ' },
   { to: '/members', icon: Users, label: '利用者マスタ' },
