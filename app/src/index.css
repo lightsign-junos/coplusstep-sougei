@@ -22,8 +22,8 @@ body {
 .vehicle-pink-header { background-color: #EC4899; color: white; }
 .vehicle-blue { background-color: #EFF6FF; border-color: #93C5FD; }
 .vehicle-blue-header { background-color: #3B82F6; color: white; }
-.vehicle-vel { background-color: #F5F3FF; border-color: #C4B5FD; }
-.vehicle-vel-header { background-color: #8B5CF6; color: white; }
+.vehicle-vel { background-color: #F3F4F6; border-color: #9CA3AF; }
+.vehicle-vel-header { background-color: #1F2937; color: white; }
 
 @media print {
   .no-print { display: none !important; }
