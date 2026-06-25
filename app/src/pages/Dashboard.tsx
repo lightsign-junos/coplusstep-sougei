@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { Calendar, Users, Car, AlertTriangle, ChevronRight, UserX } from 'lucide-react';
+
 import { useDataStore } from '../store/dataStore';
 import { VehicleBadge, StatusBadge } from '../components/common/Badge';
 import { Modal } from '../components/common/Modal';
@@ -29,7 +30,7 @@ export function Dashboard() {
 
   // Stats
   const totalMembers = members.length;
-  const totalVehicles = vehicles.filter(v => v.active).length;
+  const activeVehicleCount = vehicles.filter(v => v.active && activeRoutes.some(r => r.vehicleId === v.id)).length;
   const absentCount = todayAbsents.length;
 
   // Get stops for a route
@@ -69,11 +70,10 @@ export function Dashboard() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
         {[
           { icon: Users, label: '利用者数', value: totalMembers, color: 'blue', sub: '登録済み' },
-          { icon: Car, label: '稼働車両', value: totalVehicles, color: 'green', sub: '台' },
-          { icon: Calendar, label: '本日のルート', value: activeRoutes.length, color: 'purple', sub: '件' },
+          { icon: Car, label: '稼働車両', value: activeVehicleCount, color: 'green', sub: '台' },
           { icon: UserX, label: '本日の欠席', value: absentCount, color: absentCount > 0 ? 'red' : 'gray', sub: '名' },
         ].map(({ icon: Icon, label, value, color, sub }) => (
           <div key={label} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
