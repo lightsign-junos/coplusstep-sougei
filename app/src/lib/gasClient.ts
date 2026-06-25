@@ -1,0 +1,57 @@
+import type {
+  Member, MemberLocation, Staff, Vehicle,
+  Route, RouteStop, DailyOverride, AllowedUser,
+} from '../types';
+
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbwPds7ghq7ZLFJ1VNfTtV7yucE9G24AOYpbh_Sbm1Hu1HNeaTZ606E_qI9fbL8sxlkH/exec';
+
+export interface GASData {
+  members: Member[];
+  memberLocations: MemberLocation[];
+  staff: Staff[];
+  vehicles: Vehicle[];
+  routes: Route[];
+  routeStops: RouteStop[];
+  dailyOverrides: DailyOverride[];
+  allowedUsers: AllowedUser[];
+}
+
+// GAS returns time values as 1899-12-xx dates (spreadsheet internal format)
+// Convert them back to HH:MM strings (JST = UTC+9)
+function fixGASValues(val: unknown): unknown {
+  if (typeof val === 'string' && /^1899-12-\d{2}T\d{2}:\d{2}:\d{2}/.test(val)) {
+    const d = new Date(val);
+    const mins = (d.getUTCHours() * 60 + d.getUTCMinutes() + 540) % (24 * 60);
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
+  if (Array.isArray(val)) return val.map(fixGASValues);
+  if (val && typeof val === 'object') {
+    return Object.fromEntries(Object.entries(val as Record<string, unknown>).map(([k, v]) => [k, fixGASValues(v)]));
+  }
+  return val;
+}
+
+export async function gasGetAll(): Promise<GASData | null> {
+  try {
+    const res = await fetch(`${GAS_URL}?action=getAllData`);
+    const json = await res.json();
+    if (!json.ok) return null;
+    return fixGASValues(json.data) as GASData;
+  } catch {
+    return null;
+  }
+}
+
+export async function gasSaveAll(data: GASData): Promise<void> {
+  try {
+    await fetch(`${GAS_URL}?action=saveAllData`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(data),
+    });
+  } catch {
+    // silent fail — localStorage is the fallback
+  }
+}

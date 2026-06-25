@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "送迎システム",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "5173"],
+      "cwd": "/Users/hoteruapa/Desktop/coplusstep送迎システム/app",
+      "port": 5173
+    }
+  ]
+}

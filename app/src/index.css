@@ -1,0 +1,38 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+* {
+  font-family: 'Noto Sans JP', sans-serif;
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #F8FAFC;
+  color: #1E293B;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+}
+
+.vehicle-pink { background-color: #FDF2F8; border-color: #F9A8D4; }
+.vehicle-pink-header { background-color: #EC4899; color: white; }
+.vehicle-blue { background-color: #EFF6FF; border-color: #93C5FD; }
+.vehicle-blue-header { background-color: #3B82F6; color: white; }
+.vehicle-vel { background-color: #F5F3FF; border-color: #C4B5FD; }
+.vehicle-vel-header { background-color: #8B5CF6; color: white; }
+
+@media print {
+  .no-print { display: none !important; }
+  .print-block { display: block !important; }
+  body { background: white; font-size: 10pt; }
+  .sidebar { display: none !important; }
+}
+
+.print-block { display: none; }
+
+.drag-handle:hover { cursor: grab; }
+.drag-handle:active { cursor: grabbing; }
