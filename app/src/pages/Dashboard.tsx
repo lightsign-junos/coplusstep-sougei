@@ -109,9 +109,9 @@ export function Dashboard() {
         </button>
       </div>
 
-      {/* Today's routes */}
+      {/* Today's routes — 3 vehicles fixed */}
       <div className="mb-6">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-4">
           <h2 className="text-base font-semibold text-gray-900">本日の送迎ルート</h2>
           <button
             onClick={() => navigate('/daily')}
@@ -121,65 +121,92 @@ export function Dashboard() {
           </button>
         </div>
 
-        {activeRoutes.length === 0 ? (
-          <div className="bg-white rounded-xl border border-gray-100 p-8 text-center text-gray-400">
-            <Calendar size={32} className="mx-auto mb-2 opacity-50" />
-            <p className="text-sm">本日のルートが登録されていません</p>
-          </div>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {activeRoutes.map(route => {
-              const vehicle = getVehicle(route.vehicleId);
-              const stops = getStops(route.id);
-              const absentIds = todayAbsents.filter(o => o.routeId === route.id).map(o => o.memberId);
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {vehicles.filter(v => v.active).map(vehicle => {
+            const route = activeRoutes.find(r => r.vehicleId === vehicle.id);
+            const stops = route ? getStops(route.id) : [];
+            const absentIds = route
+              ? todayAbsents.filter(o => o.routeId === route.id).map(o => o.memberId)
+              : [];
+            const presentCount = stops.filter(s => !absentIds.includes(s.memberId)).length;
 
-              return (
-                <div key={route.id} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-                  {/* Header */}
-                  <div className={`px-4 py-3 ${vehicle ? `vehicle-${vehicle.color}-header` : 'bg-gray-500 text-white'}`}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Car size={16} />
-                        <span className="font-semibold text-sm">{vehicle?.name ?? '未設定'}</span>
-                        {vehicle && <VehicleBadge color={vehicle.color} name={`${stops.length}名`} />}
-                      </div>
-                      <span className="text-xs opacity-80">到着 {route.arrivalTime}</span>
+            return (
+              <div key={vehicle.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
+                {/* Colored header */}
+                <div className={`vehicle-${vehicle.color}-header px-5 py-4`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Car size={20} />
+                      <span className="text-lg font-bold">{vehicle.name}</span>
                     </div>
-                    <p className="text-xs opacity-80 mt-1">
-                      運転：{getStaffName(route.driverId)} ／ 添乗：{getStaffName(route.attendantId)}
-                    </p>
-                  </div>
-
-                  {/* Stops */}
-                  <div className="p-3">
-                    {stops.length === 0 ? (
-                      <p className="text-xs text-gray-400 text-center py-2">停車地点なし</p>
-                    ) : (
-                      <div className="space-y-1.5">
-                        {stops.map((stop, i) => {
-                          const member = getMember(stop.memberId);
-                          const isAbsent = absentIds.includes(stop.memberId);
-                          return (
-                            <div key={stop.id} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm ${isAbsent ? 'bg-red-50 opacity-60' : 'bg-gray-50'}`}>
-                              <span className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-500 flex-shrink-0">
-                                {i + 1}
-                              </span>
-                              <span className={`flex-1 font-medium ${isAbsent ? 'line-through text-red-400' : 'text-gray-800'}`}>
-                                {member?.name ?? '不明'}
-                              </span>
-                              <span className="text-xs text-gray-400 font-mono">{stop.scheduledTime}</span>
-                              {isAbsent && <StatusBadge variant="absent" />}
-                            </div>
-                          );
-                        })}
-                      </div>
+                    {route && (
+                      <span className="text-sm font-semibold opacity-90">
+                        到着 {route.arrivalTime}
+                      </span>
                     )}
                   </div>
+                  {route ? (
+                    <div className="text-xs opacity-80 space-y-0.5">
+                      <p>運転：{getStaffName(route.driverId)}</p>
+                      <p>添乗：{getStaffName(route.attendantId)}</p>
+                    </div>
+                  ) : (
+                    <p className="text-xs opacity-70">本日ルートなし</p>
+                  )}
                 </div>
-              );
-            })}
-          </div>
-        )}
+
+                {/* Passenger count bar */}
+                {route && (
+                  <div className={`vehicle-${vehicle.color} px-5 py-2 border-b flex items-center justify-between`}>
+                    <span className="text-xs font-medium text-gray-600">乗車人数</span>
+                    <span className="text-sm font-bold text-gray-800">
+                      {presentCount}名
+                      {absentIds.length > 0 && (
+                        <span className="ml-1.5 text-xs font-normal text-red-400">
+                          （欠席{absentIds.length}名）
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                )}
+
+                {/* Stop list */}
+                <div className="p-4 flex-1">
+                  {!route ? (
+                    <div className="flex flex-col items-center justify-center py-6 text-gray-300">
+                      <Car size={28} className="mb-2" />
+                      <p className="text-sm">ルート未設定</p>
+                    </div>
+                  ) : stops.length === 0 ? (
+                    <p className="text-sm text-gray-400 text-center py-4">停車地点なし</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {stops.map((stop, i) => {
+                        const member = getMember(stop.memberId);
+                        const isAbsent = absentIds.includes(stop.memberId);
+                        return (
+                          <div
+                            key={stop.id}
+                            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl ${isAbsent ? 'bg-red-50' : 'bg-gray-50'}`}
+                          >
+                            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${isAbsent ? 'bg-red-200 text-red-500' : 'bg-gray-200 text-gray-500'}`}>
+                              {i + 1}
+                            </span>
+                            <span className={`flex-1 text-sm font-medium ${isAbsent ? 'line-through text-red-300' : 'text-gray-800'}`}>
+                              {member?.name ?? '不明'}
+                            </span>
+                            <span className="text-sm font-mono text-gray-500">{stop.scheduledTime}</span>
+                            {isAbsent && <StatusBadge variant="absent" />}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* Today's notices */}
