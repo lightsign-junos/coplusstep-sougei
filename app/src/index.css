@@ -26,10 +26,101 @@ body {
 .vehicle-vel-header { background-color: #1F2937; color: white; }
 
 @media print {
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
   .no-print { display: none !important; }
   .print-block { display: block !important; }
-  body { background: white; font-size: 10pt; }
+
+  body { background: white !important; margin: 0; padding: 0; }
   .sidebar { display: none !important; }
+
+  /* メインコンテンツのサイドバー余白を消す */
+  main { margin-left: 0 !important; }
+
+  /* 送迎表テーブルをページいっぱいに収める */
+  .print-table-wrap {
+    width: 100%;
+    overflow: visible !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    height: 175mm;
+    display: flex;
+    flex-direction: column;
+  }
+  .print-table-wrap > div {
+    overflow: visible !important;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  /* ① テーブルサイズを固定 */
+  .print-table-wrap table {
+    width: 100%;
+    height: 100%;
+    table-layout: fixed;
+    font-size: 5.5pt;
+    line-height: 1.2;
+    border-collapse: collapse;
+  }
+  /* ② tbody 行を均等高さで固定 */
+  .print-table-wrap table tbody {
+    height: 100%;
+  }
+  .print-table-wrap table tbody tr {
+    height: 1%;
+  }
+  /* ③ すべてのセル・子孫要素で改行を絶対禁止 */
+  .print-table-wrap table th,
+  .print-table-wrap table td {
+    padding: 0 2px !important;
+    text-align: center !important;
+    vertical-align: middle !important;
+    overflow: hidden;
+  }
+  .print-table-wrap table th,
+  .print-table-wrap table th *,
+  .print-table-wrap table td,
+  .print-table-wrap table td * {
+    white-space: nowrap !important;
+    overflow: hidden !important;
+  }
+  /* 「様」を小さく表示して名前を大きく見せる */
+  .print-sama {
+    font-size: 3.5pt !important;
+    vertical-align: middle !important;
+  }
+  /* 名前部分のフォントを大きく */
+  .print-table-wrap table td .cell-line > *:first-child {
+    font-size: 9pt !important;
+  }
+
+  /* ④ 運転・添乗ラベルを非表示 */
+  .print-table-wrap table td .row-label {
+    display: none !important;
+  }
+  /* ⑤ 名前と時間はそれぞれ1行ずつ（改行なし） */
+  .print-table-wrap table td .cell-line {
+    display: block !important;
+    text-align: center !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+  }
+  .print-table-wrap table td .cell-line > * {
+    display: block !important;
+    text-align: center !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    font-size: 7pt !important;
+    line-height: 1.2 !important;
+  }
+
+  /* ページまたぎ防止 */
+  table { page-break-inside: avoid; }
 }
 
 .print-block { display: none; }

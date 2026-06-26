@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { format } from 'date-fns';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { format, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { Calendar, Users, Car, AlertTriangle, ChevronRight, UserX } from 'lucide-react';
 
@@ -12,17 +12,24 @@ const DAYS_JP = ['日', '月', '火', '水', '木', '金', '土'];
 
 export function Dashboard() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { routes, routeStops, members, staff, vehicles, dailyOverrides, addDailyOverride } = useDataStore();
-  const today = new Date();
-  const todayStr = format(today, 'yyyy-MM-dd');
-  const dayOfWeek = DAYS_JP[today.getDay()];
+
+  const todayReal = new Date();
+  const todayStr = format(todayReal, 'yyyy-MM-dd');
+  const dateParam = searchParams.get('date');
+  const selectedDate = dateParam ? parseISO(dateParam) : todayReal;
+  const selectedDateStr = dateParam ?? todayStr;
+  const isToday = selectedDateStr === todayStr;
+  const dayOfWeek = DAYS_JP[selectedDate.getDay()];
+  const dayLabel = ['日', '月', '火', '水', '木', '金', '土'][selectedDate.getDay()];
 
   const [showAbsentModal, setShowAbsentModal] = useState(false);
   const [absentMemberId, setAbsentMemberId] = useState('');
   const [absentRouteId, setAbsentRouteId] = useState('');
 
-  // Today's overrides
-  const todayOverrides = dailyOverrides.filter(o => o.date === todayStr);
+  // Selected day's overrides
+  const todayOverrides = dailyOverrides.filter(o => o.date === selectedDateStr);
   const todayAbsents = todayOverrides.filter(o => o.type === 'absent');
 
   // Active routes for today
@@ -33,10 +40,14 @@ export function Dashboard() {
   const activeVehicleCount = vehicles.filter(v => v.active && activeRoutes.some(r => r.vehicleId === v.id)).length;
   const absentCount = todayAbsents.length;
 
-  // Get stops for a route
+  // Get stops for a route, filtered to members scheduled on the selected day
   const getStops = (routeId: string) =>
     routeStops
-      .filter(rs => rs.routeId === routeId)
+      .filter(rs => {
+        if (rs.routeId !== routeId) return false;
+        const m = members.find(m => m.id === rs.memberId);
+        return m?.defaultDays.includes(dayLabel) ?? false;
+      })
       .sort((a, b) => a.order - b.order);
 
   const getMember = (id: string) => members.find(m => m.id === id);
@@ -47,7 +58,7 @@ export function Dashboard() {
     if (!absentMemberId || !absentRouteId) return;
     addDailyOverride({
       id: `ov-${Date.now()}`,
-      date: todayStr,
+      date: selectedDateStr,
       type: 'absent',
       routeId: absentRouteId,
       memberId: absentMemberId,
@@ -62,11 +73,22 @@ export function Dashboard() {
   return (
     <div>
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">ダッシュボード</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          {format(today, 'yyyy年M月d日', { locale: ja })}（{dayOfWeek}）
-        </p>
+      <div className="mb-6 flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">ダッシュボード</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            {format(selectedDate, 'yyyy年M月d日', { locale: ja })}（{dayOfWeek}）
+            {!isToday && <span className="ml-2 text-xs text-pink-500 font-medium">選択中の日付</span>}
+          </p>
+        </div>
+        {!isToday && (
+          <button
+            onClick={() => setSearchParams({})}
+            className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer text-gray-600"
+          >
+            今日に戻る
+          </button>
+        )}
       </div>
 
       {/* Stats */}
@@ -112,7 +134,9 @@ export function Dashboard() {
       {/* Today's routes — 3 vehicles fixed */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold text-gray-900">本日の送迎ルート</h2>
+          <h2 className="text-base font-semibold text-gray-900">
+            {isToday ? '本日' : `${format(selectedDate, 'M/d', { locale: ja })}（${dayOfWeek}）`}の送迎ルート
+          </h2>
           <button
             onClick={() => navigate('/daily')}
             className="flex items-center gap-1 text-xs text-pink-600 hover:text-pink-700 cursor-pointer"

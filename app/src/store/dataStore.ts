@@ -10,12 +10,12 @@ const ADMIN_EMAIL = 'junnosuke.honda@lightsign.jp';
 
 // Sample seed data
 const seedMembers: Member[] = [
-  { id: 'm1', name: '田中 太郎', phone: '090-1234-5678', defaultDays: ['月', '火', '水', '木', '金'], sendFlag: true, returnFlag: true, notes: '', createdAt: '2024-01-01' },
-  { id: 'm2', name: '鈴木 花子', phone: '090-2345-6789', defaultDays: ['月', '水', '金'], sendFlag: true, returnFlag: true, notes: '', createdAt: '2024-01-01' },
-  { id: 'm3', name: '佐藤 次郎', phone: '090-3456-7890', defaultDays: ['火', '木'], sendFlag: true, returnFlag: false, notes: '帰りは自力', createdAt: '2024-01-01' },
-  { id: 'm4', name: '山田 三郎', phone: '090-4567-8901', defaultDays: ['月', '火', '水', '木', '金'], sendFlag: true, returnFlag: true, notes: '', createdAt: '2024-01-01' },
-  { id: 'm5', name: '伊藤 四郎', phone: '090-5678-9012', defaultDays: ['月', '火', '木', '金'], sendFlag: true, returnFlag: true, notes: '', createdAt: '2024-01-01' },
-  { id: 'm6', name: '渡辺 五郎', phone: '090-6789-0123', defaultDays: ['水', '金'], sendFlag: true, returnFlag: true, notes: '', createdAt: '2024-01-01' },
+  { id: 'm1', name: '田中 太郎', nameKana: 'たなか たろう', phone: '090-1234-5678', defaultDays: ['月', '火', '水', '木', '金'], sendFlag: true, returnFlag: true, notes: '', createdAt: '2024-01-01' },
+  { id: 'm2', name: '鈴木 花子', nameKana: 'すずき はなこ', phone: '090-2345-6789', defaultDays: ['月', '水', '金'], sendFlag: true, returnFlag: true, notes: '', createdAt: '2024-01-01' },
+  { id: 'm3', name: '佐藤 次郎', nameKana: 'さとう じろう', phone: '090-3456-7890', defaultDays: ['火', '木'], sendFlag: true, returnFlag: false, notes: '帰りは自力', createdAt: '2024-01-01' },
+  { id: 'm4', name: '山田 三郎', nameKana: 'やまだ さぶろう', phone: '090-4567-8901', defaultDays: ['月', '火', '水', '木', '金'], sendFlag: true, returnFlag: true, notes: '', createdAt: '2024-01-01' },
+  { id: 'm5', name: '伊藤 四郎', nameKana: 'いとう しろう', phone: '090-5678-9012', defaultDays: ['月', '火', '木', '金'], sendFlag: true, returnFlag: true, notes: '', createdAt: '2024-01-01' },
+  { id: 'm6', name: '渡辺 五郎', nameKana: 'わたなべ ごろう', phone: '090-6789-0123', defaultDays: ['水', '金'], sendFlag: true, returnFlag: true, notes: '', createdAt: '2024-01-01' },
 ];
 
 const seedLocations: MemberLocation[] = [
@@ -121,6 +121,9 @@ interface DataState {
   // Vel toggle
   setVelEnabled: (weekStart: string, enabled: boolean) => void;
   isVelEnabled: (weekStart: string) => boolean;
+
+  // Auto time calculation (10 min intervals, working backwards from arrivalTime)
+  recalcRouteStopTimes: (routeId: string) => void;
 }
 
 export const useDataStore = create<DataState>()(
@@ -139,6 +142,7 @@ export const useDataStore = create<DataState>()(
       gasLoaded: false,
 
       initFromGAS: async () => {
+        if (get().gasLoaded) return;
         const data = await gasGetAll();
         if (!data) {
           // GAS unavailable: seed GAS with current store data
@@ -227,6 +231,32 @@ export const useDataStore = create<DataState>()(
 
       setVelEnabled: (weekStart, enabled) => set(s => ({ velWeeks: { ...s.velWeeks, [weekStart]: enabled } })),
       isVelEnabled: (weekStart) => get().velWeeks[weekStart] ?? false,
+
+      recalcRouteStopTimes: (routeId) => {
+        const s = get();
+        const route = s.routes.find(r => r.id === routeId);
+        if (!route) return;
+        const stops = s.routeStops
+          .filter(rs => rs.routeId === routeId)
+          .sort((a, b) => a.order - b.order);
+        if (stops.length === 0) return;
+        const [h, m] = route.arrivalTime.split(':').map(Number);
+        const arrMins = h * 60 + m;
+        const INTERVAL = 10;
+        const timeMap = new Map<string, string>();
+        stops.forEach((stop, i) => {
+          const mins = arrMins - (stops.length - i) * INTERVAL;
+          const adjusted = ((mins % 1440) + 1440) % 1440;
+          const ph = Math.floor(adjusted / 60);
+          const pm = adjusted % 60;
+          timeMap.set(stop.id, `${String(ph).padStart(2, '0')}:${String(pm).padStart(2, '0')}`);
+        });
+        set(s => ({
+          routeStops: s.routeStops.map(rs =>
+            timeMap.has(rs.id) ? { ...rs, scheduledTime: timeMap.get(rs.id)! } : rs
+          ),
+        }));
+      },
     }),
     { name: 'coplus-step-data' }
   )

@@ -8,6 +8,7 @@ export type OverrideType = 'absent' | 'route_change';
 export interface Member {
   id: string;
   name: string;
+  nameKana?: string; // "たなか たろう" 苗字と名前をスペース区切り
   phone: string;
   defaultDays: string[]; // ['月', '火', '水', '木', '金', '土']
   sendFlag: boolean;

@@ -20,7 +20,7 @@ export function MemberMaster() {
   const [editingLocation, setEditingLocation] = useState<MemberLocation | null>(null);
 
   const [mForm, setMForm] = useState({
-    name: '', phone: '', defaultDays: [] as string[],
+    name: '', nameKana: '', phone: '', defaultDays: [] as string[],
     sendFlag: true, returnFlag: true, notes: '',
   });
 
@@ -37,13 +37,13 @@ export function MemberMaster() {
 
   const openCreateMember = () => {
     setEditingMember(null);
-    setMForm({ name: '', phone: '', defaultDays: [], sendFlag: true, returnFlag: true, notes: '' });
+    setMForm({ name: '', nameKana: '', phone: '', defaultDays: [], sendFlag: true, returnFlag: true, notes: '' });
     setShowMemberModal(true);
   };
 
   const openEditMember = (m: Member) => {
     setEditingMember(m);
-    setMForm({ name: m.name, phone: m.phone, defaultDays: m.defaultDays, sendFlag: m.sendFlag, returnFlag: m.returnFlag, notes: m.notes });
+    setMForm({ name: m.name, nameKana: m.nameKana ?? '', phone: m.phone, defaultDays: m.defaultDays, sendFlag: m.sendFlag, returnFlag: m.returnFlag, notes: m.notes });
     setShowMemberModal(true);
   };
 
@@ -213,6 +213,8 @@ export function MemberMaster() {
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-gray-700 mb-1">氏名 *</label>
                 <input value={mForm.name} onChange={e => setMForm(f => ({ ...f, name: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-300" placeholder="例：田中 太郎" />
+                <label className="block text-xs font-medium text-gray-700 mb-1 mt-3">読み仮名</label>
+                <input value={mForm.nameKana} onChange={e => setMForm(f => ({ ...f, nameKana: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-300" placeholder="例：たなか たろう" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">電話番号</label>
