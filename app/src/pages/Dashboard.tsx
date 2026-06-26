@@ -5,7 +5,7 @@ import { ja } from 'date-fns/locale';
 import { Calendar, Users, Car, AlertTriangle, ChevronRight, UserX } from 'lucide-react';
 
 import { useDataStore } from '../store/dataStore';
-import { VehicleBadge, StatusBadge } from '../components/common/Badge';
+import { StatusBadge } from '../components/common/Badge';
 import { Modal } from '../components/common/Modal';
 
 const DAYS_JP = ['日', '月', '火', '水', '木', '金', '土'];
@@ -52,7 +52,6 @@ export function Dashboard() {
 
   const getMember = (id: string) => members.find(m => m.id === id);
   const getStaffName = (id: string) => staff.find(s => s.id === id)?.name ?? '未設定';
-  const getVehicle = (id: string) => vehicles.find(v => v.id === id);
 
   const handleAddAbsent = () => {
     if (!absentMemberId || !absentRouteId) return;
