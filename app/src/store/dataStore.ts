@@ -126,6 +126,26 @@ interface DataState {
   recalcRouteStopTimes: (routeId: string) => void;
 }
 
+let _gasDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleGASSave() {
+  if (_gasDebounceTimer) clearTimeout(_gasDebounceTimer);
+  _gasDebounceTimer = setTimeout(() => {
+    const s = useDataStore.getState();
+    if (!s.gasLoaded) return;
+    gasSaveAll({
+      members: s.members,
+      memberLocations: s.memberLocations,
+      staff: s.staff,
+      vehicles: s.vehicles,
+      routes: s.routes,
+      routeStops: s.routeStops,
+      dailyOverrides: s.dailyOverrides,
+      allowedUsers: s.allowedUsers,
+    });
+  }, 1500);
+}
+
 export const useDataStore = create<DataState>()(
   persist(
     (set, get) => ({
@@ -261,3 +281,18 @@ export const useDataStore = create<DataState>()(
     { name: 'coplus-step-data' }
   )
 );
+
+// Auto-save to GAS on data changes (debounced 1.5s)
+useDataStore.subscribe((state, prev) => {
+  if (!state.gasLoaded) return;
+  const changed =
+    state.members !== prev.members ||
+    state.memberLocations !== prev.memberLocations ||
+    state.staff !== prev.staff ||
+    state.vehicles !== prev.vehicles ||
+    state.routes !== prev.routes ||
+    state.routeStops !== prev.routeStops ||
+    state.dailyOverrides !== prev.dailyOverrides ||
+    state.allowedUsers !== prev.allowedUsers;
+  if (changed) scheduleGASSave();
+});
