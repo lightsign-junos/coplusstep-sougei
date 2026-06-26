@@ -77,6 +77,7 @@ interface DataState {
   velWeeks: Record<string, boolean>; // weekStart -> enabled
   // GAS sync
   gasLoaded: boolean;
+  syncStatus: 'idle' | 'saving' | 'saved' | 'error';
 
   // GAS sync action
   initFromGAS: () => Promise<void>;
@@ -130,19 +131,27 @@ let _gasDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 function scheduleGASSave() {
   if (_gasDebounceTimer) clearTimeout(_gasDebounceTimer);
-  _gasDebounceTimer = setTimeout(() => {
+  useDataStore.setState({ syncStatus: 'saving' });
+  _gasDebounceTimer = setTimeout(async () => {
     const s = useDataStore.getState();
     if (!s.gasLoaded) return;
-    gasSaveAll({
-      members: s.members,
-      memberLocations: s.memberLocations,
-      staff: s.staff,
-      vehicles: s.vehicles,
-      routes: s.routes,
-      routeStops: s.routeStops,
-      dailyOverrides: s.dailyOverrides,
-      allowedUsers: s.allowedUsers,
-    });
+    try {
+      await gasSaveAll({
+        members: s.members,
+        memberLocations: s.memberLocations,
+        staff: s.staff,
+        vehicles: s.vehicles,
+        routes: s.routes,
+        routeStops: s.routeStops,
+        dailyOverrides: s.dailyOverrides,
+        allowedUsers: s.allowedUsers,
+      });
+      useDataStore.setState({ syncStatus: 'saved' });
+      setTimeout(() => useDataStore.setState({ syncStatus: 'idle' }), 2000);
+    } catch {
+      useDataStore.setState({ syncStatus: 'error' });
+      setTimeout(() => useDataStore.setState({ syncStatus: 'idle' }), 3000);
+    }
   }, 1500);
 }
 
@@ -160,6 +169,7 @@ export const useDataStore = create<DataState>()(
       dailyOverrides: [],
       velWeeks: {},
       gasLoaded: false,
+      syncStatus: 'idle' as const,
 
       initFromGAS: async () => {
         if (get().gasLoaded) return;
