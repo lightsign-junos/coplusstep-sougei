@@ -4,9 +4,10 @@ import { ShieldCheck, Plus, Trash2, Crown } from 'lucide-react';
 import { useDataStore } from '../store/dataStore';
 
 export function AdminPage() {
-  const { currentUser, allowedUsers, addAllowedUser, removeAllowedUser } = useDataStore();
+  const { currentUser, allowedUsers, addAllowedUser, updateAllowedUser, removeAllowedUser } = useDataStore();
   const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
+  const [newIsAdmin, setNewIsAdmin] = useState(false);
   const [error, setError] = useState('');
 
   if (!currentUser?.isAdmin) {
@@ -23,11 +24,16 @@ export function AdminPage() {
       email: newEmail.trim(),
       name: newName.trim() || newEmail.trim(),
       addedAt: new Date().toISOString(),
-      isAdmin: false,
+      isAdmin: newIsAdmin,
     });
     setNewEmail('');
     setNewName('');
+    setNewIsAdmin(false);
     setError('');
+  };
+
+  const handleToggleAdmin = (email: string, currentIsAdmin: boolean) => {
+    updateAllowedUser(email, { isAdmin: !currentIsAdmin });
   };
 
   return (
@@ -38,7 +44,7 @@ export function AdminPage() {
         </div>
         <div>
           <h1 className="text-2xl font-bold text-gray-900">管理者設定</h1>
-          <p className="text-xs text-gray-500">ログイン許可アドレスの管理</p>
+          <p className="text-xs text-gray-500">ログイン許可アドレスの管理・権限設定</p>
         </div>
       </div>
 
@@ -66,6 +72,16 @@ export function AdminPage() {
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300"
               />
             </div>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={newIsAdmin}
+                onChange={e => setNewIsAdmin(e.target.checked)}
+                className="w-4 h-4 rounded accent-purple-500 cursor-pointer"
+              />
+              <span className="text-sm text-gray-700">管理者権限を付与する</span>
+              <span className="text-xs text-gray-400">（ユーザー追加・権限変更が可能になります）</span>
+            </label>
             {error && <p className="text-xs text-red-500">{error}</p>}
             <button
               onClick={handleAdd}
@@ -83,32 +99,54 @@ export function AdminPage() {
             <h2 className="text-sm font-semibold text-gray-900">許可ユーザー一覧 ({allowedUsers.length}件)</h2>
           </div>
           <div className="divide-y divide-gray-100">
-            {allowedUsers.map(user => (
-              <div key={user.email} className="flex items-center gap-3 px-6 py-3">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-100 to-pink-100 flex items-center justify-center text-xs font-bold text-purple-600 flex-shrink-0">
-                  {user.name[0]}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium text-gray-900 truncate">{user.name}</p>
-                    {user.isAdmin && (
-                      <span className="flex items-center gap-1 text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">
-                        <Crown size={10} /> 管理者
-                      </span>
-                    )}
+            {allowedUsers.map(user => {
+              const isSelf = user.email === currentUser.email;
+              return (
+                <div key={user.email} className="flex items-center gap-3 px-6 py-3">
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-100 to-pink-100 flex items-center justify-center text-xs font-bold text-purple-600 flex-shrink-0">
+                    {user.name[0]}
                   </div>
-                  <p className="text-xs text-gray-400 truncate">{user.email}</p>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-gray-900 truncate">{user.name}</p>
+                      {user.isAdmin && (
+                        <span className="flex items-center gap-1 text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">
+                          <Crown size={10} /> 管理者
+                        </span>
+                      )}
+                      {isSelf && (
+                        <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">自分</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-400 truncate">{user.email}</p>
+                  </div>
+
+                  {/* Admin toggle */}
+                  <button
+                    onClick={() => handleToggleAdmin(user.email, user.isAdmin)}
+                    disabled={isSelf}
+                    title={isSelf ? '自分の権限は変更できません' : user.isAdmin ? '管理者権限を解除' : '管理者権限を付与'}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
+                      user.isAdmin
+                        ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
+                        : 'bg-gray-100 text-gray-500 hover:bg-purple-100 hover:text-purple-700'
+                    }`}
+                  >
+                    <Crown size={12} />
+                    {user.isAdmin ? '解除' : '付与'}
+                  </button>
+
+                  <button
+                    onClick={() => removeAllowedUser(user.email)}
+                    disabled={isSelf}
+                    className="p-1.5 text-gray-400 hover:text-red-500 cursor-pointer hover:bg-red-50 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    title={isSelf ? '自分自身は削除できません' : '削除'}
+                  >
+                    <Trash2 size={14} />
+                  </button>
                 </div>
-                <button
-                  onClick={() => removeAllowedUser(user.email)}
-                  disabled={user.email === currentUser.email}
-                  className="p-1.5 text-gray-400 hover:text-red-500 cursor-pointer hover:bg-red-50 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                  title={user.email === currentUser.email ? '自分自身は削除できません' : '削除'}
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>

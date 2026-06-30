@@ -86,6 +86,7 @@ interface DataState {
   login: (user: AuthUser) => boolean;
   logout: () => void;
   addAllowedUser: (user: AllowedUser) => void;
+  updateAllowedUser: (email: string, patch: Partial<AllowedUser>) => void;
   removeAllowedUser: (email: string) => void;
 
   // Member actions
@@ -222,6 +223,9 @@ export const useDataStore = create<DataState>()(
       logout: () => set({ currentUser: null }),
 
       addAllowedUser: (user) => set(s => ({ allowedUsers: [...s.allowedUsers, user] })),
+      updateAllowedUser: (email, patch) => set(s => ({
+        allowedUsers: s.allowedUsers.map(u => u.email === email ? { ...u, ...patch } : u),
+      })),
       removeAllowedUser: (email) => set(s => ({ allowedUsers: s.allowedUsers.filter(u => u.email !== email) })),
 
       addMember: (m) => set(s => ({ members: [...s.members, m] })),
