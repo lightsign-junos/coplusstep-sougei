@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { format, startOfWeek, addDays, addWeeks, subWeeks } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, Printer, Plus, Copy, UserPlus, LayoutGrid, Table } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Printer, Plus, Copy, UserPlus, LayoutGrid, Table, Car, Check } from 'lucide-react';
 import { useDataStore } from '../store/dataStore';
 import { getMemberDisplayName } from '../lib/memberDisplay';
 import { Modal } from '../components/common/Modal';
@@ -28,11 +28,32 @@ const VEHICLE_DAY_COLORS: Record<string, string> = {
 
 export function WeeklySchedule() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const isNewFlow = searchParams.get('new') === '1';
+
   const {
     vehicles, routes, routeStops, members, staff, dailyOverrides,
     updateMember, addMember, addRoute, addRouteStop, deleteRouteStop,
     updateRoute, recalcRouteStopTimes,
   } = useDataStore();
+
+  const allActiveVehicles = vehicles.filter(v => v.active);
+
+  // Wizard step: only shown when coming from Dashboard's "作成" button
+  const [wizardStep, setWizardStep] = useState<'select-vehicles' | 'edit'>(
+    isNewFlow ? 'select-vehicles' : 'edit'
+  );
+  const [selectedVehicleIds, setSelectedVehicleIds] = useState<Set<string>>(
+    () => new Set(allActiveVehicles.filter(v => v.color !== 'vel').map(v => v.id))
+  );
+
+  const toggleVehicle = (id: string) => {
+    setSelectedVehicleIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) { next.delete(id); } else { next.add(id); }
+      return next;
+    });
+  };
 
   const [viewMode, setViewMode] = useState<ViewMode>('schedule');
   const [weekBase, setWeekBase] = useState(new Date());
@@ -46,7 +67,10 @@ export function WeeklySchedule() {
   const [editingStaff, setEditingStaff] = useState<{ vehicleId: string; field: 'driverId' | 'attendantId' } | null>(null);
 
   const goRoutes = routes.filter(r => r.direction === 'go');
-  const activeVehicles = vehicles.filter(v => v.active);
+  // When in wizard flow, only show selected vehicles; otherwise show all
+  const activeVehicles = wizardStep === 'edit' && isNewFlow
+    ? allActiveVehicles.filter(v => selectedVehicleIds.has(v.id))
+    : allActiveVehicles;
 
   // ── Vehicle assignment helpers ──────────────────────────────
 
@@ -248,6 +272,79 @@ export function WeeklySchedule() {
 
   const pickingVehicle = picking ? activeVehicles.find(v => v.id === picking.vehicleId) : null;
   const editingRoute = editingStaff ? goRoutes.find(r => r.vehicleId === editingStaff.vehicleId) : null;
+
+  // ── 車両選択ステップ ───────────────────────────────────────
+  if (wizardStep === 'select-vehicles') {
+    const VEHICLE_STYLES: Record<string, { header: string; card: string; check: string }> = {
+      pink: { header: 'vehicle-pink-header', card: 'border-pink-300 bg-pink-50', check: 'bg-pink-500' },
+      blue: { header: 'vehicle-blue-header', card: 'border-blue-300 bg-blue-50', check: 'bg-blue-500' },
+      vel:  { header: 'vehicle-vel-header',  card: 'border-gray-300 bg-gray-50',  check: 'bg-gray-700' },
+    };
+
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[70vh] px-4">
+        <div className="w-full max-w-xl">
+          {/* ステップ表示 */}
+          <div className="flex items-center gap-2 mb-6">
+            <button onClick={() => navigate('/')} className="text-sm text-gray-400 hover:text-gray-600 cursor-pointer">
+              ← ダッシュボードに戻る
+            </button>
+          </div>
+
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">今週の送迎表を作成</h1>
+          <p className="text-gray-500 text-sm mb-8">使用する車両を選択してください</p>
+
+          <div className="flex flex-col gap-3 mb-8">
+            {allActiveVehicles.map(vehicle => {
+              const styles = VEHICLE_STYLES[vehicle.color] ?? VEHICLE_STYLES.vel;
+              const selected = selectedVehicleIds.has(vehicle.id);
+              const memberCount = routeStops.filter(rs =>
+                goRoutes.some(r => r.vehicleId === vehicle.id && r.id === rs.routeId)
+              ).length;
+
+              return (
+                <div
+                  key={vehicle.id}
+                  onClick={() => toggleVehicle(vehicle.id)}
+                  className={`flex items-center gap-4 p-4 rounded-2xl border-2 cursor-pointer transition-all select-none ${
+                    selected ? styles.card + ' shadow-sm' : 'border-gray-200 bg-white opacity-50'
+                  }`}
+                >
+                  {/* 車両カラーバー */}
+                  <div className={`${styles.header} w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0`}>
+                    <Car size={22} />
+                  </div>
+
+                  <div className="flex-1">
+                    <p className="font-bold text-gray-900">{vehicle.name}号</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {vehicle.color === 'vel' ? '補助稼働（必要な時のみ）' : '常時稼働'}
+                      {memberCount > 0 && <span className="ml-2">{memberCount}名 登録済み</span>}
+                    </p>
+                  </div>
+
+                  {/* チェックマーク */}
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
+                    selected ? styles.check + ' text-white' : 'border-2 border-gray-300 bg-white'
+                  }`}>
+                    {selected && <Check size={14} strokeWidth={3} />}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <button
+            onClick={() => setWizardStep('edit')}
+            disabled={selectedVehicleIds.size === 0}
+            className="w-full py-3.5 bg-pink-500 hover:bg-pink-600 text-white font-bold text-base rounded-2xl cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            次へ進む → 利用者を配置する
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full">
