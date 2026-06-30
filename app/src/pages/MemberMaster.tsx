@@ -1,12 +1,17 @@
 import { useState } from 'react';
-import { Plus, Search, Edit2, Trash2, MapPin, Phone, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, MapPin, Phone, ChevronDown, ChevronUp, ArrowRight, ArrowLeft } from 'lucide-react';
 import { useDataStore } from '../store/dataStore';
 import { Modal } from '../components/common/Modal';
 import { DayBadge } from '../components/common/Badge';
 import type { Member, MemberLocation, Direction } from '../types';
 
 const ALL_DAYS = ['月', '火', '水', '木', '金', '土'];
-const DIRECTION_LABELS: Record<Direction, string> = { go: '行き', return: '帰り', both: '両方' };
+
+const DIRECTION_OPTIONS: { value: Direction; label: string; sub: string }[] = [
+  { value: 'go',     label: '乗せる場所（行き）',       sub: '朝、迎えに行く場所' },
+  { value: 'return', label: '降ろす場所（帰り）',       sub: '夕方、送り届ける場所' },
+  { value: 'both',   label: '行き・帰り同じ場所',       sub: '迎えも送りも同じ場所' },
+];
 
 export function MemberMaster() {
   const { members, memberLocations, addMember, updateMember, deleteMember,
@@ -15,7 +20,7 @@ export function MemberMaster() {
   const [search, setSearch] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showMemberModal, setShowMemberModal] = useState(false);
-  const [showLocationModal, setShowLocationModal] = useState<string | null>(null);
+  const [showLocationModal, setShowLocationModal] = useState<{ memberId: string; defaultDir?: Direction } | null>(null);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
   const [editingLocation, setEditingLocation] = useState<MemberLocation | null>(null);
 
@@ -28,12 +33,15 @@ export function MemberMaster() {
     name: '', address: '', direction: 'both' as Direction, notes: '',
   });
 
-  const filtered = members.filter(m =>
-    m.name.includes(search) || m.phone.includes(search)
-  );
+  const filtered = members
+    .filter(m => m.name.includes(search) || (m.nameKana ?? '').includes(search) || m.phone.includes(search))
+    .sort((a, b) => (a.nameKana ?? a.name).localeCompare(b.nameKana ?? b.name, 'ja'));
 
   const getLocations = (memberId: string) =>
     memberLocations.filter(l => l.memberId === memberId);
+
+  const getLocsByDir = (memberId: string, dir: 'go' | 'return') =>
+    memberLocations.filter(l => l.memberId === memberId && (l.direction === dir || l.direction === 'both'));
 
   const openCreateMember = () => {
     setEditingMember(null);
@@ -57,16 +65,16 @@ export function MemberMaster() {
     setShowMemberModal(false);
   };
 
-  const openCreateLocation = (memberId: string) => {
+  const openCreateLocation = (memberId: string, defaultDir?: Direction) => {
     setEditingLocation(null);
-    setLForm({ name: '', address: '', direction: 'both', notes: '' });
-    setShowLocationModal(memberId);
+    setLForm({ name: '', address: '', direction: defaultDir ?? 'both', notes: '' });
+    setShowLocationModal({ memberId, defaultDir });
   };
 
   const openEditLocation = (loc: MemberLocation) => {
     setEditingLocation(loc);
     setLForm({ name: loc.name, address: loc.address, direction: loc.direction, notes: loc.notes });
-    setShowLocationModal(loc.memberId);
+    setShowLocationModal({ memberId: loc.memberId });
   };
 
   const handleSaveLocation = () => {
@@ -74,7 +82,7 @@ export function MemberMaster() {
     if (editingLocation) {
       updateMemberLocation({ ...editingLocation, ...lForm });
     } else {
-      addMemberLocation({ id: `l-${Date.now()}`, memberId: showLocationModal, ...lForm });
+      addMemberLocation({ id: `l-${Date.now()}`, memberId: showLocationModal.memberId, ...lForm });
     }
     setShowLocationModal(null);
   };
@@ -103,7 +111,7 @@ export function MemberMaster() {
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="氏名・電話番号で検索"
+          placeholder="氏名・読み仮名・電話番号で検索"
           className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-pink-300 bg-white"
         />
       </div>
@@ -112,6 +120,8 @@ export function MemberMaster() {
       <div className="space-y-2">
         {filtered.map(member => {
           const locs = getLocations(member.id);
+          const goLocs = getLocsByDir(member.id, 'go');
+          const returnLocs = getLocsByDir(member.id, 'return');
           const expanded = expandedId === member.id;
 
           return (
@@ -124,74 +134,82 @@ export function MemberMaster() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-semibold text-gray-900 text-sm">{member.name}</span>
-                    {member.sendFlag && <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">行き</span>}
-                    {member.returnFlag && <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded">帰り</span>}
+                    {member.nameKana && <span className="text-xs text-gray-400">{member.nameKana}</span>}
                   </div>
-                  <div className="flex items-center gap-2 mt-1">
+                  <div className="flex items-center gap-3 mt-1 flex-wrap">
                     {member.phone && (
                       <span className="text-xs text-gray-400 flex items-center gap-1">
                         <Phone size={11} /> {member.phone}
                       </span>
                     )}
-                    <div className="flex gap-1">
+                    <div className="flex gap-0.5">
                       {ALL_DAYS.map(d => (
                         <DayBadge key={d} day={d} active={member.defaultDays.includes(d)} />
                       ))}
                     </div>
                   </div>
+                  {/* 場所サマリー（折りたたみ時に表示） */}
+                  {!expanded && locs.length > 0 && (
+                    <div className="flex gap-3 mt-1.5">
+                      {goLocs.length > 0 && (
+                        <span className="text-xs text-blue-600 flex items-center gap-1">
+                          <ArrowRight size={11} /> 乗せる:{goLocs[0].name}
+                        </span>
+                      )}
+                      {returnLocs.length > 0 && (
+                        <span className="text-xs text-orange-600 flex items-center gap-1">
+                          <ArrowLeft size={11} /> 降ろす:{returnLocs[0].name}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {!expanded && locs.length === 0 && (
+                    <span className="text-xs text-gray-300 mt-1 flex items-center gap-1">
+                      <MapPin size={11} /> 場所未登録
+                    </span>
+                  )}
                 </div>
-                <div className="flex items-center gap-1">
-                  <span className="text-xs text-gray-400 flex items-center gap-1">
-                    <MapPin size={11} /> {locs.length}件
-                  </span>
+                <div className="flex items-center gap-1 flex-shrink-0">
                   <button onClick={() => openEditMember(member)} className="p-1.5 text-gray-400 hover:text-gray-600 cursor-pointer hover:bg-gray-100 rounded">
                     <Edit2 size={14} />
                   </button>
                   <button onClick={() => deleteMember(member.id)} className="p-1.5 text-gray-400 hover:text-red-500 cursor-pointer hover:bg-red-50 rounded">
                     <Trash2 size={14} />
                   </button>
-                  <button onClick={() => setExpandedId(expanded ? null : member.id)} className="p-1.5 text-gray-400 hover:text-gray-600 cursor-pointer hover:bg-gray-100 rounded">
-                    {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  <button
+                    onClick={() => setExpandedId(expanded ? null : member.id)}
+                    className="p-1.5 text-gray-400 hover:text-gray-600 cursor-pointer hover:bg-gray-100 rounded flex items-center gap-1"
+                  >
+                    <MapPin size={14} />
+                    {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                   </button>
                 </div>
               </div>
 
-              {/* Expanded: locations */}
+              {/* Expanded: location sections */}
               {expanded && (
-                <div className="border-t border-gray-100 bg-gray-50 px-4 py-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-xs font-semibold text-gray-600">乗降場所</p>
-                    <button onClick={() => openCreateLocation(member.id)} className="flex items-center gap-1 text-xs text-pink-600 hover:text-pink-700 cursor-pointer">
-                      <Plus size={12} /> 追加
-                    </button>
-                  </div>
-                  {locs.length === 0 ? (
-                    <p className="text-xs text-gray-400">乗降場所が登録されていません</p>
-                  ) : (
-                    <div className="space-y-1.5">
-                      {locs.map(loc => (
-                        <div key={loc.id} className="flex items-start gap-2 bg-white border border-gray-100 rounded-lg px-3 py-2">
-                          <MapPin size={14} className="text-gray-400 mt-0.5 flex-shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium text-gray-800">{loc.name}</span>
-                              <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{DIRECTION_LABELS[loc.direction]}</span>
-                            </div>
-                            <p className="text-xs text-gray-500 truncate">{loc.address}</p>
-                            {loc.notes && <p className="text-xs text-gray-400 truncate">{loc.notes}</p>}
-                          </div>
-                          <div className="flex gap-1">
-                            <button onClick={() => openEditLocation(loc)} className="p-1 text-gray-400 hover:text-gray-600 cursor-pointer rounded">
-                              <Edit2 size={12} />
-                            </button>
-                            <button onClick={() => deleteMemberLocation(loc.id)} className="p-1 text-gray-400 hover:text-red-500 cursor-pointer rounded">
-                              <Trash2 size={12} />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                <div className="border-t border-gray-100 bg-gray-50 px-4 py-4 grid grid-cols-2 gap-4">
+                  {/* 行き（乗せる場所） */}
+                  <LocationSection
+                    title="乗せる場所（行き）"
+                    icon={<ArrowRight size={14} className="text-blue-500" />}
+                    color="blue"
+                    locs={goLocs}
+                    onAdd={() => openCreateLocation(member.id, 'go')}
+                    onEdit={openEditLocation}
+                    onDelete={deleteMemberLocation}
+                  />
+
+                  {/* 帰り（降ろす場所） */}
+                  <LocationSection
+                    title="降ろす場所（帰り）"
+                    icon={<ArrowLeft size={14} className="text-orange-500" />}
+                    color="orange"
+                    locs={returnLocs}
+                    onAdd={() => openCreateLocation(member.id, 'return')}
+                    onEdit={openEditLocation}
+                    onDelete={deleteMemberLocation}
+                  />
                 </div>
               )}
             </div>
@@ -200,7 +218,7 @@ export function MemberMaster() {
 
         {filtered.length === 0 && (
           <div className="bg-white rounded-xl border border-gray-100 p-12 text-center text-gray-400">
-            <p>利用者が登録されていません</p>
+            {search ? '検索結果がありません' : '利用者が登録されていません'}
           </div>
         )}
       </div>
@@ -209,17 +227,17 @@ export function MemberMaster() {
       {showMemberModal && (
         <Modal title={editingMember ? '利用者を編集' : '利用者を追加'} onClose={() => setShowMemberModal(false)}>
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
-                <label className="block text-xs font-medium text-gray-700 mb-1">氏名 *</label>
-                <input value={mForm.name} onChange={e => setMForm(f => ({ ...f, name: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-300" placeholder="例：田中 太郎" />
-                <label className="block text-xs font-medium text-gray-700 mb-1 mt-3">読み仮名</label>
-                <input value={mForm.nameKana} onChange={e => setMForm(f => ({ ...f, nameKana: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-300" placeholder="例：たなか たろう" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">電話番号</label>
-                <input value={mForm.phone} onChange={e => setMForm(f => ({ ...f, phone: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-300" placeholder="090-0000-0000" />
-              </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">氏名 *</label>
+              <input value={mForm.name} onChange={e => setMForm(f => ({ ...f, name: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-300" placeholder="例：田中 太郎" autoFocus />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">読み仮名</label>
+              <input value={mForm.nameKana} onChange={e => setMForm(f => ({ ...f, nameKana: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-300" placeholder="例：たなか たろう" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">電話番号</label>
+              <input value={mForm.phone} onChange={e => setMForm(f => ({ ...f, phone: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-300" placeholder="090-0000-0000" />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-2">利用曜日</label>
@@ -256,27 +274,57 @@ export function MemberMaster() {
 
       {/* Location modal */}
       {showLocationModal && (
-        <Modal title={editingLocation ? '乗降場所を編集' : '乗降場所を追加'} onClose={() => setShowLocationModal(null)} size="sm">
+        <Modal title={editingLocation ? '場所を編集' : '場所を追加'} onClose={() => setShowLocationModal(null)} size="sm">
           <div className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">場所名 *</label>
-              <input value={lForm.name} onChange={e => setLForm(f => ({ ...f, name: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-300" placeholder="例：自宅、〇〇駅北口" />
+              <label className="block text-xs font-medium text-gray-700 mb-1">場所の名前 *</label>
+              <input
+                value={lForm.name}
+                onChange={e => setLForm(f => ({ ...f, name: e.target.value }))}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-300"
+                placeholder="例：自宅、〇〇駅北口、セブンイレブン前"
+                autoFocus
+              />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">住所</label>
-              <input value={lForm.address} onChange={e => setLForm(f => ({ ...f, address: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-300" placeholder="例：東京都大田区昭和島1-1-1" />
+              <label className="block text-xs font-medium text-gray-700 mb-1">住所・場所の詳細</label>
+              <input
+                value={lForm.address}
+                onChange={e => setLForm(f => ({ ...f, address: e.target.value }))}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-300"
+                placeholder="例：東京都大田区昭和島1-1-1"
+              />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">区分</label>
-              <select value={lForm.direction} onChange={e => setLForm(f => ({ ...f, direction: e.target.value as Direction }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-300">
-                <option value="both">行き・帰り両方</option>
-                <option value="go">行きのみ</option>
-                <option value="return">帰りのみ</option>
-              </select>
+              <label className="block text-xs font-medium text-gray-700 mb-2">区分</label>
+              <div className="space-y-2">
+                {DIRECTION_OPTIONS.map(opt => (
+                  <label key={opt.value} className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-colors ${lForm.direction === opt.value ? 'border-pink-300 bg-pink-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                    <input
+                      type="radio"
+                      name="direction"
+                      value={opt.value}
+                      checked={lForm.direction === opt.value}
+                      onChange={() => setLForm(f => ({ ...f, direction: opt.value }))}
+                      className="accent-pink-500"
+                    />
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">{opt.label}</p>
+                      <p className="text-xs text-gray-400">{opt.sub}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">メモ</label>
-              <textarea value={lForm.notes} onChange={e => setLForm(f => ({ ...f, notes: e.target.value }))} rows={2} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-300 resize-none" placeholder="例：改札前で待機" />
+              <textarea
+                value={lForm.notes}
+                onChange={e => setLForm(f => ({ ...f, notes: e.target.value }))}
+                rows={2}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-300 resize-none"
+                placeholder="例：改札前で待機、建物の裏口から"
+              />
             </div>
             <div className="flex gap-2 justify-end pt-2 border-t border-gray-100">
               <button onClick={() => setShowLocationModal(null)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg cursor-pointer">キャンセル</button>
@@ -284,6 +332,72 @@ export function MemberMaster() {
             </div>
           </div>
         </Modal>
+      )}
+    </div>
+  );
+}
+
+// ── 場所セクションコンポーネント ────────────────────────────────
+
+type LocSectionProps = {
+  title: string;
+  icon: React.ReactNode;
+  color: 'blue' | 'orange';
+  locs: MemberLocation[];
+  onAdd: () => void;
+  onEdit: (loc: MemberLocation) => void;
+  onDelete: (id: string) => void;
+};
+
+function LocationSection({ title, icon, color, locs, onAdd, onEdit, onDelete }: LocSectionProps) {
+  const borderColor = color === 'blue' ? 'border-blue-200' : 'border-orange-200';
+  const bgColor = color === 'blue' ? 'bg-blue-50' : 'bg-orange-50';
+  const textColor = color === 'blue' ? 'text-blue-700' : 'text-orange-700';
+  const addBtnColor = color === 'blue' ? 'text-blue-600 hover:text-blue-700' : 'text-orange-600 hover:text-orange-700';
+
+  return (
+    <div className={`rounded-xl border-2 ${borderColor} ${bgColor} p-3`}>
+      <div className="flex items-center justify-between mb-2">
+        <div className={`flex items-center gap-1.5 text-xs font-semibold ${textColor}`}>
+          {icon}
+          {title}
+        </div>
+        <button
+          onClick={onAdd}
+          className={`flex items-center gap-1 text-xs font-medium cursor-pointer ${addBtnColor}`}
+        >
+          <Plus size={12} /> 追加
+        </button>
+      </div>
+
+      {locs.length === 0 ? (
+        <button
+          onClick={onAdd}
+          className="w-full border-2 border-dashed border-gray-300 rounded-lg py-3 text-xs text-gray-400 hover:border-gray-400 hover:text-gray-500 cursor-pointer transition-colors"
+        >
+          場所を登録する
+        </button>
+      ) : (
+        <div className="space-y-1.5">
+          {locs.map(loc => (
+            <div key={loc.id} className="flex items-start gap-2 bg-white rounded-lg px-3 py-2 border border-white shadow-sm group">
+              <MapPin size={13} className="text-gray-400 mt-0.5 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-800 leading-tight">{loc.name}</p>
+                {loc.address && <p className="text-xs text-gray-400 truncate mt-0.5">{loc.address}</p>}
+                {loc.notes && <p className="text-xs text-gray-400 truncate italic">{loc.notes}</p>}
+              </div>
+              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                <button onClick={() => onEdit(loc)} className="p-1 text-gray-400 hover:text-gray-600 cursor-pointer rounded">
+                  <Edit2 size={12} />
+                </button>
+                <button onClick={() => onDelete(loc.id)} className="p-1 text-gray-400 hover:text-red-500 cursor-pointer rounded">
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
