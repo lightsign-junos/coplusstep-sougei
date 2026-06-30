@@ -286,8 +286,8 @@ export function WeeklySchedule() {
         <div className="w-full max-w-xl">
           {/* ステップ表示 */}
           <div className="flex items-center gap-2 mb-6">
-            <button onClick={() => navigate('/')} className="text-sm text-gray-400 hover:text-gray-600 cursor-pointer">
-              ← ダッシュボードに戻る
+            <button onClick={() => navigate('/dashboard')} className="text-sm text-gray-400 hover:text-gray-600 cursor-pointer">
+              ← 当日確認に戻る
             </button>
           </div>
 
@@ -546,7 +546,7 @@ export function WeeklySchedule() {
                       <th
                         key={d.label}
                         colSpan={numVehicles}
-                        onClick={() => navigate(`/?date=${d.dateStr}`)}
+                        onClick={() => navigate(`/dashboard?date=${d.dateStr}`)}
                         className={`border border-gray-300 px-2 py-2 text-center font-bold text-sm cursor-pointer select-none transition-colors ${
                           d.dateStr === today ? 'bg-pink-100 text-pink-700 hover:bg-pink-200'
                           : d.label === '土' ? 'bg-blue-50 text-blue-700 hover:bg-blue-100'

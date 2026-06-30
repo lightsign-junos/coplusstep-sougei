@@ -115,11 +115,11 @@ export function Dashboard() {
       {/* Quick actions */}
       <div className="flex flex-wrap gap-3 mb-6">
         <button
-          onClick={() => navigate('/daily')}
+          onClick={() => navigate('/')}
           className="flex items-center gap-2 px-4 py-2 bg-pink-500 text-white text-sm font-medium rounded-lg hover:bg-pink-600 cursor-pointer transition-colors"
         >
           <Calendar size={16} />
-          週次送迎表を見る
+          送迎表を編集する
         </button>
         <button
           onClick={() => setShowAbsentModal(true)}
@@ -137,7 +137,7 @@ export function Dashboard() {
             {isToday ? '本日' : `${format(selectedDate, 'M/d', { locale: ja })}（${dayOfWeek}）`}の送迎ルート
           </h2>
           <button
-            onClick={() => navigate('/daily')}
+            onClick={() => navigate('/')}
             className="flex items-center gap-1 text-xs text-pink-600 hover:text-pink-700 cursor-pointer"
           >
             詳細を見る <ChevronRight size={14} />

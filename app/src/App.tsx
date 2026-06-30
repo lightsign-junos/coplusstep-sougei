@@ -12,7 +12,6 @@ import { AdminPage } from './pages/AdminPage';
 import { useDataStore } from './store/dataStore';
 import { setupGasSync } from './lib/gasSync';
 
-// Set up auto-sync subscription once at module level
 setupGasSync();
 
 export default function App() {
@@ -27,13 +26,17 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route element={<Layout />}>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/daily" element={<WeeklySchedule />} />
-          <Route path="/monthly" element={<MonthlySchedule />} />
-          <Route path="/routes" element={<RouteMaster />} />
+          {/* 送迎スケジュール編集がメインページ */}
+          <Route path="/" element={<WeeklySchedule />} />
+          {/* ダッシュボードは当日確認用サブページ */}
+          <Route path="/dashboard" element={<Dashboard />} />
+          {/* マスタ管理（補助機能） */}
           <Route path="/members" element={<MemberMaster />} />
           <Route path="/staff" element={<StaffVehicleMaster />} />
           <Route path="/admin" element={<AdminPage />} />
+          {/* Phase 2（ナビには表示しないが URL は維持） */}
+          <Route path="/monthly" element={<MonthlySchedule />} />
+          <Route path="/routes" element={<RouteMaster />} />
         </Route>
       </Routes>
     </BrowserRouter>
