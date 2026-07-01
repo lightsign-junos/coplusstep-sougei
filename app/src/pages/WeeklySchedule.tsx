@@ -615,9 +615,6 @@ export function WeeklySchedule() {
                                     <div className="font-medium text-gray-800 text-[15px] leading-tight">
                                       {displayName(member)}<span className="print-sama text-[11px] text-gray-500 ml-0.5">様</span>
                                     </div>
-                                    {stop.scheduledTime && stop.scheduledTime !== '00:00' && (
-                                      <div className="text-gray-600 font-mono text-[14px] font-semibold">{stop.scheduledTime}</div>
-                                    )}
                                     <button
                                       onClick={e => { e.stopPropagation(); handleRemove(member.id, d.label, v.id); }}
                                       className="absolute -top-1 -right-1 w-4 h-4 bg-red-100 text-red-500 rounded-full text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity no-print"
