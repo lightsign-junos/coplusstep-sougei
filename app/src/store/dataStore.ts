@@ -41,8 +41,8 @@ const seedVehicles: Vehicle[] = [
 ];
 
 const seedRoutes: Route[] = [
-  { id: 'r1', name: 'ピンク号 行き', direction: 'go', vehicleId: 'v1', driverId: 's1', attendantId: 's2', arrivalTime: '09:30', velEnabled: false, notes: '' },
-  { id: 'r2', name: '青号 行き', direction: 'go', vehicleId: 'v2', driverId: 's4', attendantId: 's3', arrivalTime: '09:30', velEnabled: false, notes: '' },
+  { id: 'r1', name: 'ピンク号 行き', direction: 'go', vehicleId: 'v1', driverId: 's1', attendantId: 's2', arrivalTime: '10:55', velEnabled: false, notes: '' },
+  { id: 'r2', name: '青号 行き', direction: 'go', vehicleId: 'v2', driverId: 's4', attendantId: 's3', arrivalTime: '10:55', velEnabled: false, notes: '' },
 ];
 
 const seedRouteStops: RouteStop[] = [

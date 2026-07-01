@@ -112,7 +112,7 @@ export function WeeklySchedule() {
         vehicleId,
         driverId: '',
         attendantId: '',
-        arrivalTime: '09:30',
+        arrivalTime: '10:55',
         velEnabled: false,
         notes: '',
       };
