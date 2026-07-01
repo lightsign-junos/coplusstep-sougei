@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Plus, Search, Edit2, Trash2, MapPin, Phone, ChevronDown, ChevronUp, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, MapPin, Phone, ChevronDown, ChevronUp, ArrowRight, ArrowLeft, Map } from 'lucide-react';
 import { useDataStore } from '../store/dataStore';
 import { Modal } from '../components/common/Modal';
+import { MapPicker } from '../components/common/MapPicker';
 import { DayBadge } from '../components/common/Badge';
 import type { Member, MemberLocation, Direction } from '../types';
 
@@ -21,6 +22,7 @@ export function MemberMaster() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showMemberModal, setShowMemberModal] = useState(false);
   const [showLocationModal, setShowLocationModal] = useState<{ memberId: string; defaultDir?: Direction } | null>(null);
+  const [showMapPicker, setShowMapPicker] = useState(false);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
   const [editingLocation, setEditingLocation] = useState<MemberLocation | null>(null);
 
@@ -31,6 +33,8 @@ export function MemberMaster() {
 
   const [lForm, setLForm] = useState({
     name: '', address: '', direction: 'both' as Direction, notes: '',
+    lat: undefined as number | undefined,
+    lng: undefined as number | undefined,
   });
 
   const filtered = members
@@ -67,14 +71,19 @@ export function MemberMaster() {
 
   const openCreateLocation = (memberId: string, defaultDir?: Direction) => {
     setEditingLocation(null);
-    setLForm({ name: '', address: '', direction: defaultDir ?? 'both', notes: '' });
+    setLForm({ name: '', address: '', direction: defaultDir ?? 'both', notes: '', lat: undefined, lng: undefined });
     setShowLocationModal({ memberId, defaultDir });
   };
 
   const openEditLocation = (loc: MemberLocation) => {
     setEditingLocation(loc);
-    setLForm({ name: loc.name, address: loc.address, direction: loc.direction, notes: loc.notes });
+    setLForm({ name: loc.name, address: loc.address, direction: loc.direction, notes: loc.notes, lat: loc.lat, lng: loc.lng });
     setShowLocationModal({ memberId: loc.memberId });
+  };
+
+  const handleMapConfirm = (lat: number, lng: number, address: string) => {
+    setLForm(f => ({ ...f, lat, lng, address }));
+    setShowMapPicker(false);
   };
 
   const handleSaveLocation = () => {
@@ -287,13 +296,27 @@ export function MemberMaster() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">住所・場所の詳細</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-medium text-gray-700">住所・場所の詳細</label>
+                <button
+                  type="button"
+                  onClick={() => setShowMapPicker(true)}
+                  className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-pink-600 bg-pink-50 hover:bg-pink-100 rounded-lg cursor-pointer transition-colors"
+                >
+                  <Map size={12} /> 地図で指定
+                </button>
+              </div>
               <input
                 value={lForm.address}
                 onChange={e => setLForm(f => ({ ...f, address: e.target.value }))}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-300"
                 placeholder="例：東京都大田区昭和島1-1-1"
               />
+              {lForm.lat && (
+                <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                  <MapPin size={11} /> 地図上の位置が保存されます
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-2">区分</label>
@@ -331,6 +354,18 @@ export function MemberMaster() {
               <button onClick={handleSaveLocation} disabled={!lForm.name} className="px-4 py-2 text-sm bg-pink-500 text-white rounded-lg hover:bg-pink-600 cursor-pointer disabled:opacity-50">保存</button>
             </div>
           </div>
+        </Modal>
+      )}
+
+      {/* Map picker modal */}
+      {showMapPicker && (
+        <Modal title="地図で場所を指定" onClose={() => setShowMapPicker(false)} size="xl">
+          <MapPicker
+            initialLat={lForm.lat}
+            initialLng={lForm.lng}
+            onConfirm={handleMapConfirm}
+            onClose={() => setShowMapPicker(false)}
+          />
         </Modal>
       )}
     </div>
