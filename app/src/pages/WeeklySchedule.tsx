@@ -27,7 +27,7 @@ export function WeeklySchedule() {
 
   const {
     vehicles, routes, routeStops, members, staff, dailyOverrides, weeklyDayOverrides,
-    addMember, addRoute, addRouteStop, deleteRouteStop,
+    addMember, addRoute, addRouteStop, updateRouteStop, deleteRouteStop,
     updateRoute, addWeeklyDayOverride, removeWeeklyDayOverride,
   } = useDataStore();
 
@@ -57,7 +57,7 @@ export function WeeklySchedule() {
   const [newName, setNewName] = useState('');
   const [newKana, setNewKana] = useState('');
   const [copyToast, setCopyToast] = useState(false);
-  const [picking, setPicking] = useState<{ dayLabel: string; vehicleId: string } | null>(null);
+  const [picking, setPicking] = useState<{ dayLabel: string; vehicleId: string; rowIdx: number } | null>(null);
   const [editingStaff, setEditingStaff] = useState<{ vehicleId: string; field: 'driverId' | 'attendantId' } | null>(null);
 
   const goRoutes = routes.filter(r => r.direction === 'go');
@@ -214,26 +214,35 @@ export function WeeklySchedule() {
     return { route, stops, presentCount };
   };
 
+  // maxRowsはroute全体の最大order番号ベース（行番号 = order番号）
   let maxRows = 6;
-  for (const d of weekDates) {
-    for (const v of activeVehicles) {
-      const { stops } = getDayVehicleData(d.dateStr, d.label, v.id);
-      if (stops.length >= maxRows) maxRows = stops.length + 1;
+  for (const v of activeVehicles) {
+    const route = goRoutes.find(r => r.vehicleId === v.id);
+    if (route) {
+      const maxOrder = routeStops
+        .filter(rs => rs.routeId === route.id)
+        .reduce((max, rs) => Math.max(max, rs.order), 0);
+      if (maxOrder >= maxRows) maxRows = maxOrder + 1;
     }
   }
   const numVehicles = activeVehicles.length;
 
   const handleAdd = (memberId: string) => {
     if (!picking) return;
-    const { dayLabel, vehicleId } = picking;
+    const { dayLabel, vehicleId, rowIdx } = picking;
     const route = goRoutes.find(r => r.vehicleId === vehicleId);
     if (!route) { setPicking(null); return; }
+
+    const targetOrder = rowIdx + 1;
 
     // 車両へのrouteStop（乗車割当）がなければ追加
     const hasStop = routeStops.some(rs => rs.routeId === route.id && rs.memberId === memberId);
     if (!hasStop) {
-      const maxOrder = routeStops.filter(rs => rs.routeId === route.id).reduce((max, rs) => Math.max(max, rs.order), 0);
-      addRouteStop({ id: `rs-${Date.now()}`, routeId: route.id, memberId, locationId: '', order: maxOrder + 1, scheduledTime: '00:00' });
+      // targetOrder以上のstopを1つ後ろにずらして空きを作る
+      routeStops
+        .filter(rs => rs.routeId === route.id && rs.order >= targetOrder)
+        .forEach(rs => updateRouteStop({ ...rs, order: rs.order + 1 }));
+      addRouteStop({ id: `rs-${Date.now()}`, routeId: route.id, memberId, locationId: '', order: targetOrder, scheduledTime: '00:00' });
     }
 
     // defaultDaysにない曜日 → この週だけの追加オーバーライドを作成（defaultDaysは変更しない）
@@ -639,7 +648,8 @@ export function WeeklySchedule() {
                       {weekDates.flatMap(d =>
                         activeVehicles.map(v => {
                           const { route, stops } = getDayVehicleData(d.dateStr, d.label, v.id);
-                          const stop = stops[rowIdx];
+                          // 行番号(rowIdx+1) = order番号で直接検索
+                          const stop = stops.find(s => s.order === rowIdx + 1);
                           const member = stop ? getMember(stop.memberId) : null;
                           const absent = stop && route ? isAbsent(d.dateStr, stop.memberId, route.id) : false;
                           const isToday = d.dateStr === today;
@@ -647,7 +657,7 @@ export function WeeklySchedule() {
                           return (
                             <td
                               key={`cell-${d.label}-${v.id}-${rowIdx}`}
-                              onClick={showAdd ? () => setPicking({ dayLabel: d.label, vehicleId: v.id }) : undefined}
+                              onClick={showAdd ? () => setPicking({ dayLabel: d.label, vehicleId: v.id, rowIdx }) : undefined}
                               className={`border border-gray-200 px-2 py-2 text-center align-middle min-w-[80px] ${isToday ? 'bg-pink-50/40' : ''} ${showAdd ? 'cursor-pointer hover:bg-gray-50' : ''}`}
                             >
                               {member ? (
