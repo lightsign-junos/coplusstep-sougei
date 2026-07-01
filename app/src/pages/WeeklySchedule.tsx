@@ -6,9 +6,8 @@ import { ChevronLeft, ChevronRight, Printer, Plus, Copy, UserPlus, LayoutGrid, T
 import { useDataStore } from '../store/dataStore';
 import { getMemberDisplayName } from '../lib/memberDisplay';
 import { Modal } from '../components/common/Modal';
-import type { Member } from '../types';
 
-const DAYS = ['月', '火', '水', '木', '金', '土'];
+
 const WEEK_DAYS = [
   { label: '月', idx: 1 },
   { label: '火', idx: 2 },
@@ -20,11 +19,6 @@ const WEEK_DAYS = [
 
 type ViewMode = 'schedule' | 'table';
 
-const VEHICLE_DAY_COLORS: Record<string, string> = {
-  pink: 'bg-pink-500 text-white',
-  blue: 'bg-blue-500 text-white',
-  vel: 'bg-gray-700 text-white',
-};
 
 export function WeeklySchedule() {
   const navigate = useNavigate();
@@ -148,15 +142,6 @@ export function WeeklySchedule() {
       goRoutes.some(r => r.id === rs.routeId) && rs.memberId === memberId
     );
     if (stop) deleteRouteStop(stop.id);
-  };
-
-  const toggleDay = (member: Member, day: string) => {
-    updateMember({
-      ...member,
-      defaultDays: member.defaultDays.includes(day)
-        ? member.defaultDays.filter(d => d !== day)
-        : [...member.defaultDays, day],
-    });
   };
 
   // ── Add member ─────────────────────────────────────────────
@@ -442,7 +427,6 @@ export function WeeklySchedule() {
           {/* Vehicle columns */}
           <div className="flex-1 grid grid-cols-3 gap-3 overflow-y-auto">
             {activeVehicles.map(vehicle => {
-              const dayBtnColor = VEHICLE_DAY_COLORS[vehicle.color] ?? VEHICLE_DAY_COLORS.vel;
               const vehicleMembers = getVehicleMembers(vehicle.id);
               const isOver = dragOverVehicleId === vehicle.id;
 
@@ -477,28 +461,20 @@ export function WeeklySchedule() {
                     {vehicleMembers.map(member => (
                       <div
                         key={member.id}
-                        className="bg-gray-50 rounded-xl border border-gray-100 p-3 group"
+                        className="bg-gray-50 rounded-xl border border-gray-100 px-3 py-2.5 group flex items-center justify-between"
                       >
-                        <div className="flex items-center justify-between mb-2">
+                        <div>
                           <span className="text-sm font-semibold text-gray-800">{member.name}</span>
-                          <button
-                            onClick={() => handleUnassign(member.id)}
-                            className="w-5 h-5 rounded-full bg-gray-200 text-gray-400 hover:bg-red-100 hover:text-red-500 text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 cursor-pointer transition-all"
-                          >
-                            ×
-                          </button>
+                          {member.defaultDays.length > 0 && (
+                            <p className="text-xs text-gray-400 mt-0.5">{member.defaultDays.join('・')}</p>
+                          )}
                         </div>
-                        <div className="flex gap-1">
-                          {DAYS.map(day => (
-                            <button
-                              key={day}
-                              onClick={() => toggleDay(member, day)}
-                              className={`w-7 h-7 rounded-full text-xs font-semibold cursor-pointer transition-colors ${member.defaultDays.includes(day) ? dayBtnColor : 'bg-gray-200 text-gray-400 hover:bg-gray-300'}`}
-                            >
-                              {day}
-                            </button>
-                          ))}
-                        </div>
+                        <button
+                          onClick={() => handleUnassign(member.id)}
+                          className="w-5 h-5 rounded-full bg-gray-200 text-gray-400 hover:bg-red-100 hover:text-red-500 text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 cursor-pointer transition-all flex-shrink-0"
+                        >
+                          ×
+                        </button>
                       </div>
                     ))}
 
