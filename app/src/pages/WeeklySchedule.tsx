@@ -353,14 +353,12 @@ export function WeeklySchedule() {
             </button>
           </div>
 
-          {viewMode === 'schedule' && (
-            <button
-              onClick={handleCopyWeek}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
-            >
-              <Copy size={13} /> 前週をコピー
-            </button>
-          )}
+          <button
+            onClick={handleCopyWeek}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+          >
+            <Copy size={13} /> 前週をコピー
+          </button>
           {viewMode === 'table' && (
             <>
               <button onClick={() => setWeekBase(w => subWeeks(w, 1))} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
@@ -601,7 +599,7 @@ export function WeeklySchedule() {
                           const member = stop ? getMember(stop.memberId) : null;
                           const absent = stop && route ? isAbsent(d.dateStr, stop.memberId, route.id) : false;
                           const isToday = d.dateStr === today;
-                          const showAdd = !member && rowIdx === stops.length && !!route;
+                          const showAdd = !member && !!route;
                           return (
                             <td
                               key={`cell-${d.label}-${v.id}-${rowIdx}`}
