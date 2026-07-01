@@ -116,3 +116,13 @@ export interface WeekSchedule {
   weekStart: string; // YYYY-MM-DD (Monday)
   velEnabled: boolean;
 }
+
+// 週次一覧での1週間限定の追加・除外（defaultDaysには影響しない）
+export interface WeeklyDayOverride {
+  id: string;
+  weekKey: string;    // その週の月曜日 YYYY-MM-DD
+  memberId: string;
+  vehicleId: string;
+  dayLabel: string;   // '月'〜'土'
+  type: 'add' | 'remove';
+}

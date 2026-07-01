@@ -26,9 +26,9 @@ export function WeeklySchedule() {
   const isNewFlow = searchParams.get('new') === '1';
 
   const {
-    vehicles, routes, routeStops, members, staff, dailyOverrides,
-    updateMember, addMember, addRoute, addRouteStop, deleteRouteStop,
-    updateRoute, recalcRouteStopTimes,
+    vehicles, routes, routeStops, members, staff, dailyOverrides, weeklyDayOverrides,
+    addMember, addRoute, addRouteStop, deleteRouteStop,
+    updateRoute, addWeeklyDayOverride, removeWeeklyDayOverride,
   } = useDataStore();
 
   const allActiveVehicles = vehicles.filter(v => v.active);
@@ -172,6 +172,7 @@ export function WeeklySchedule() {
   // ── Table view helpers ─────────────────────────────────────
 
   const weekStart = startOfWeek(weekBase, { weekStartsOn: 1 });
+  const weekKey = format(weekStart, 'yyyy-MM-dd');
   const weekDates = WEEK_DAYS.map(d => ({
     ...d,
     date: addDays(weekStart, d.idx - 1),
@@ -190,14 +191,25 @@ export function WeeklySchedule() {
       o => o.date === dateStr && o.memberId === memberId && o.routeId === routeId && o.type === 'absent'
     );
 
+  // defaultDays をベースに、週次オーバーライドで追加・除外を反映
+  const isActiveOnDay = (memberId: string, vehicleId: string, dayLabel: string): boolean => {
+    const member = getMember(memberId);
+    if (!member) return false;
+    const overrides = weeklyDayOverrides.filter(
+      o => o.weekKey === weekKey && o.memberId === memberId && o.vehicleId === vehicleId && o.dayLabel === dayLabel
+    );
+    const removed = overrides.some(o => o.type === 'remove');
+    const added   = overrides.some(o => o.type === 'add');
+    if (removed) return false;
+    if (added) return true;
+    return member.defaultDays.includes(dayLabel);
+  };
+
   const getDayVehicleData = (dateStr: string, dayLabel: string, vehicleId: string) => {
     const route = goRoutes.find(r => r.vehicleId === vehicleId);
     if (!route) return { route: null, stops: [], presentCount: 0 };
     const allStops = getStops(route.id);
-    const stops = allStops.filter(s => {
-      const m = getMember(s.memberId);
-      return m && m.defaultDays.includes(dayLabel);
-    });
+    const stops = allStops.filter(s => isActiveOnDay(s.memberId, vehicleId, dayLabel));
     const presentCount = stops.filter(s => !isAbsent(dateStr, s.memberId, route.id)).length;
     return { route, stops, presentCount };
   };
@@ -216,41 +228,75 @@ export function WeeklySchedule() {
     const { dayLabel, vehicleId } = picking;
     const route = goRoutes.find(r => r.vehicleId === vehicleId);
     if (!route) { setPicking(null); return; }
+
+    // 車両へのrouteStop（乗車割当）がなければ追加
     const hasStop = routeStops.some(rs => rs.routeId === route.id && rs.memberId === memberId);
     if (!hasStop) {
       const maxOrder = routeStops.filter(rs => rs.routeId === route.id).reduce((max, rs) => Math.max(max, rs.order), 0);
       addRouteStop({ id: `rs-${Date.now()}`, routeId: route.id, memberId, locationId: '', order: maxOrder + 1, scheduledTime: '00:00' });
     }
+
+    // defaultDaysにない曜日 → この週だけの追加オーバーライドを作成（defaultDaysは変更しない）
     const member = members.find(m => m.id === memberId);
     if (member && !member.defaultDays.includes(dayLabel)) {
-      updateMember({ ...member, defaultDays: [...member.defaultDays, dayLabel] });
+      // 除外オーバーライドがあれば削除、なければ追加オーバーライドを作成
+      const removeOverride = weeklyDayOverrides.find(
+        o => o.weekKey === weekKey && o.memberId === memberId && o.vehicleId === vehicleId && o.dayLabel === dayLabel && o.type === 'remove'
+      );
+      if (removeOverride) {
+        removeWeeklyDayOverride(removeOverride.id);
+      } else {
+        addWeeklyDayOverride({ id: `wdo-${Date.now()}`, weekKey, memberId, vehicleId, dayLabel, type: 'add' });
+      }
     }
+    // defaultDaysにある曜日 → 除外オーバーライドがあれば削除
+    else if (member && member.defaultDays.includes(dayLabel)) {
+      const removeOverride = weeklyDayOverrides.find(
+        o => o.weekKey === weekKey && o.memberId === memberId && o.vehicleId === vehicleId && o.dayLabel === dayLabel && o.type === 'remove'
+      );
+      if (removeOverride) removeWeeklyDayOverride(removeOverride.id);
+    }
+
     setPicking(null);
   };
 
   const handleRemove = (memberId: string, dayLabel: string, vehicleId: string) => {
     const member = members.find(m => m.id === memberId);
     if (!member) return;
-    const newDays = member.defaultDays.filter(d => d !== dayLabel);
-    updateMember({ ...member, defaultDays: newDays });
-    const route = goRoutes.find(r => r.vehicleId === vehicleId);
-    if (route && newDays.length === 0) {
-      const stop = routeStops.find(rs => rs.routeId === route.id && rs.memberId === memberId);
-      if (stop) deleteRouteStop(stop.id);
+
+    if (member.defaultDays.includes(dayLabel)) {
+      // defaultDaysにある → この週だけの除外オーバーライドを作成
+      const addOverride = weeklyDayOverrides.find(
+        o => o.weekKey === weekKey && o.memberId === memberId && o.vehicleId === vehicleId && o.dayLabel === dayLabel && o.type === 'add'
+      );
+      if (addOverride) {
+        removeWeeklyDayOverride(addOverride.id);
+      } else {
+        addWeeklyDayOverride({ id: `wdo-${Date.now()}`, weekKey, memberId, vehicleId, dayLabel, type: 'remove' });
+      }
+    } else {
+      // 追加オーバーライドで表示されていた → そのオーバーライドを削除
+      const addOverride = weeklyDayOverrides.find(
+        o => o.weekKey === weekKey && o.memberId === memberId && o.vehicleId === vehicleId && o.dayLabel === dayLabel && o.type === 'add'
+      );
+      if (addOverride) removeWeeklyDayOverride(addOverride.id);
     }
   };
 
   const availableForPicking = () => {
     if (!picking) return [];
     const { dayLabel, vehicleId } = picking;
-    const route = goRoutes.find(r => r.vehicleId === vehicleId);
-    if (!route) return members;
-    const ids = new Set(
-      routeStops.filter(rs => rs.routeId === route.id)
-        .filter(rs => getMember(rs.memberId)?.defaultDays.includes(dayLabel))
+    // 現在その曜日に表示されているメンバーを除外
+    const presentIds = new Set(
+      routeStops
+        .filter(rs => {
+          const route = goRoutes.find(r => r.vehicleId === vehicleId);
+          return route && rs.routeId === route.id;
+        })
+        .filter(rs => isActiveOnDay(rs.memberId, vehicleId, dayLabel))
         .map(rs => rs.memberId)
     );
-    return members.filter(m => !ids.has(m.id));
+    return members.filter(m => !presentIds.has(m.id));
   };
 
   const pickingVehicle = picking ? activeVehicles.find(v => v.id === picking.vehicleId) : null;

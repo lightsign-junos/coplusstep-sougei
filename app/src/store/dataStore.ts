@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type {
   Member, MemberLocation, Staff, Vehicle,
-  Route, RouteStop, DailyOverride, AllowedUser, AuthUser
+  Route, RouteStop, DailyOverride, AllowedUser, AuthUser, WeeklyDayOverride
 } from '../types';
 import { gasGetAll, gasSaveAll } from '../lib/gasClient';
 
@@ -73,6 +73,8 @@ interface DataState {
   routeStops: RouteStop[];
   // Daily
   dailyOverrides: DailyOverride[];
+  // Weekly day overrides (defaultDaysを変えずに週単位で追加・除外)
+  weeklyDayOverrides: WeeklyDayOverride[];
   // Vel weekly toggle
   velWeeks: Record<string, boolean>; // weekStart -> enabled
   // GAS sync
@@ -119,6 +121,10 @@ interface DataState {
   // Daily override actions
   addDailyOverride: (override: DailyOverride) => void;
   removeDailyOverride: (id: string) => void;
+
+  // Weekly day override actions
+  addWeeklyDayOverride: (override: WeeklyDayOverride) => void;
+  removeWeeklyDayOverride: (id: string) => void;
 
   // Vel toggle
   setVelEnabled: (weekStart: string, enabled: boolean) => void;
@@ -168,6 +174,7 @@ export const useDataStore = create<DataState>()(
       routes: seedRoutes,
       routeStops: seedRouteStops,
       dailyOverrides: [],
+      weeklyDayOverrides: [],
       velWeeks: {},
       gasLoaded: false,
       syncStatus: 'idle' as const,
@@ -262,6 +269,9 @@ export const useDataStore = create<DataState>()(
 
       addDailyOverride: (o) => set(s => ({ dailyOverrides: [...s.dailyOverrides, o] })),
       removeDailyOverride: (id) => set(s => ({ dailyOverrides: s.dailyOverrides.filter(x => x.id !== id) })),
+
+      addWeeklyDayOverride: (o) => set(s => ({ weeklyDayOverrides: [...s.weeklyDayOverrides, o] })),
+      removeWeeklyDayOverride: (id) => set(s => ({ weeklyDayOverrides: s.weeklyDayOverrides.filter(x => x.id !== id) })),
 
       setVelEnabled: (weekStart, enabled) => set(s => ({ velWeeks: { ...s.velWeeks, [weekStart]: enabled } })),
       isVelEnabled: (weekStart) => get().velWeeks[weekStart] ?? false,
