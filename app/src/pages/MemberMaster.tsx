@@ -22,9 +22,16 @@ export function MemberMaster() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showMemberModal, setShowMemberModal] = useState(false);
   const [showLocationModal, setShowLocationModal] = useState<{ memberId: string; defaultDir?: Direction } | null>(null);
-  const [showMapPicker, setShowMapPicker] = useState(false);
+  // 'location' = 場所編集モーダル用, 'inline-go' / 'inline-return' = 新規登録インライン用
+  const [mapPickerTarget, setMapPickerTarget] = useState<'location' | 'inline-go' | 'inline-return' | null>(null);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
   const [editingLocation, setEditingLocation] = useState<MemberLocation | null>(null);
+
+  type LocDraft = { name: string; address: string; lat?: number; lng?: number };
+  const emptyLoc = (): LocDraft => ({ name: '', address: '', lat: undefined, lng: undefined });
+  const [goLoc, setGoLoc] = useState<LocDraft>(emptyLoc());
+  const [returnLoc, setReturnLoc] = useState<LocDraft>(emptyLoc());
+  const [sameLocation, setSameLocation] = useState(false);
 
   const [mForm, setMForm] = useState({
     name: '', nameKana: '', phone: '', defaultDays: [] as string[],
@@ -50,6 +57,9 @@ export function MemberMaster() {
   const openCreateMember = () => {
     setEditingMember(null);
     setMForm({ name: '', nameKana: '', phone: '', defaultDays: [], sendFlag: true, returnFlag: true, notes: '' });
+    setGoLoc(emptyLoc());
+    setReturnLoc(emptyLoc());
+    setSameLocation(false);
     setShowMemberModal(true);
   };
 
@@ -64,7 +74,18 @@ export function MemberMaster() {
     if (editingMember) {
       updateMember({ ...editingMember, ...mForm });
     } else {
-      addMember({ id: `m-${Date.now()}`, createdAt: new Date().toISOString(), ...mForm });
+      const memberId = `m-${Date.now()}`;
+      addMember({ id: memberId, createdAt: new Date().toISOString(), ...mForm });
+      if (goLoc.name) {
+        if (sameLocation) {
+          addMemberLocation({ id: `l-${Date.now()}`, memberId, name: goLoc.name, address: goLoc.address, direction: 'both', notes: '', lat: goLoc.lat, lng: goLoc.lng });
+        } else {
+          addMemberLocation({ id: `l-${Date.now()}`, memberId, name: goLoc.name, address: goLoc.address, direction: 'go', notes: '', lat: goLoc.lat, lng: goLoc.lng });
+          if (returnLoc.name) {
+            addMemberLocation({ id: `l-${Date.now() + 1}`, memberId, name: returnLoc.name, address: returnLoc.address, direction: 'return', notes: '', lat: returnLoc.lat, lng: returnLoc.lng });
+          }
+        }
+      }
     }
     setShowMemberModal(false);
   };
@@ -82,8 +103,14 @@ export function MemberMaster() {
   };
 
   const handleMapConfirm = (lat: number, lng: number, address: string) => {
-    setLForm(f => ({ ...f, lat, lng, address }));
-    setShowMapPicker(false);
+    if (mapPickerTarget === 'location') {
+      setLForm(f => ({ ...f, lat, lng, address }));
+    } else if (mapPickerTarget === 'inline-go') {
+      setGoLoc(f => ({ ...f, lat, lng, address }));
+    } else if (mapPickerTarget === 'inline-return') {
+      setReturnLoc(f => ({ ...f, lat, lng, address }));
+    }
+    setMapPickerTarget(null);
   };
 
   const handleSaveLocation = () => {
@@ -234,7 +261,7 @@ export function MemberMaster() {
 
       {/* Member modal */}
       {showMemberModal && (
-        <Modal title={editingMember ? '利用者を編集' : '利用者を追加'} onClose={() => setShowMemberModal(false)}>
+        <Modal title={editingMember ? '利用者を編集' : '利用者を追加'} onClose={() => setShowMemberModal(false)} size="lg">
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">氏名 *</label>
@@ -273,6 +300,93 @@ export function MemberMaster() {
               <label className="block text-xs font-medium text-gray-700 mb-1">備考</label>
               <textarea value={mForm.notes} onChange={e => setMForm(f => ({ ...f, notes: e.target.value }))} rows={2} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-300 resize-none" />
             </div>
+
+            {/* 新規登録時のみインライン場所入力 */}
+            {!editingMember && (
+              <div className="border-t border-gray-100 pt-4 space-y-3">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">乗降場所（任意・後から追加も可）</p>
+
+                {/* 乗せる場所（行き） */}
+                <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 space-y-2">
+                  <p className="text-xs font-semibold text-blue-700 flex items-center gap-1">
+                    <ArrowRight size={12} /> 乗せる場所（行き）
+                  </p>
+                  <input
+                    value={goLoc.name}
+                    onChange={e => setGoLoc(f => ({ ...f, name: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"
+                    placeholder="場所の名前（例：自宅、〇〇駅）"
+                  />
+                  <div className="flex gap-2">
+                    <input
+                      value={goLoc.address}
+                      onChange={e => setGoLoc(f => ({ ...f, address: e.target.value }))}
+                      className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"
+                      placeholder="住所（任意）"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setMapPickerTarget('inline-go')}
+                      className="flex items-center gap-1.5 px-2.5 py-2 text-xs font-medium text-pink-600 bg-pink-50 hover:bg-pink-100 rounded-lg cursor-pointer transition-colors whitespace-nowrap"
+                    >
+                      <Map size={12} /> 地図
+                    </button>
+                  </div>
+                  {goLoc.lat && (
+                    <p className="text-xs text-green-600 flex items-center gap-1">
+                      <MapPin size={11} /> 地図上の位置が保存されます
+                    </p>
+                  )}
+                </div>
+
+                {/* 帰りも同じ場所チェック */}
+                <label className="flex items-center gap-2 cursor-pointer px-1">
+                  <input
+                    type="checkbox"
+                    checked={sameLocation}
+                    onChange={e => setSameLocation(e.target.checked)}
+                    className="w-4 h-4 accent-pink-500"
+                  />
+                  <span className="text-sm text-gray-700">帰りの降ろす場所も同じ</span>
+                </label>
+
+                {/* 降ろす場所（帰り） */}
+                {!sameLocation && (
+                  <div className="p-3 rounded-xl bg-orange-50 border border-orange-200 space-y-2">
+                    <p className="text-xs font-semibold text-orange-700 flex items-center gap-1">
+                      <ArrowLeft size={12} /> 降ろす場所（帰り）
+                    </p>
+                    <input
+                      value={returnLoc.name}
+                      onChange={e => setReturnLoc(f => ({ ...f, name: e.target.value }))}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 bg-white"
+                      placeholder="場所の名前（例：自宅、〇〇駅）"
+                    />
+                    <div className="flex gap-2">
+                      <input
+                        value={returnLoc.address}
+                        onChange={e => setReturnLoc(f => ({ ...f, address: e.target.value }))}
+                        className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 bg-white"
+                        placeholder="住所（任意）"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setMapPickerTarget('inline-return')}
+                        className="flex items-center gap-1.5 px-2.5 py-2 text-xs font-medium text-pink-600 bg-pink-50 hover:bg-pink-100 rounded-lg cursor-pointer transition-colors whitespace-nowrap"
+                      >
+                        <Map size={12} /> 地図
+                      </button>
+                    </div>
+                    {returnLoc.lat && (
+                      <p className="text-xs text-green-600 flex items-center gap-1">
+                        <MapPin size={11} /> 地図上の位置が保存されます
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex gap-2 justify-end pt-2 border-t border-gray-100">
               <button onClick={() => setShowMemberModal(false)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg cursor-pointer">キャンセル</button>
               <button onClick={handleSaveMember} disabled={!mForm.name} className="px-4 py-2 text-sm bg-pink-500 text-white rounded-lg hover:bg-pink-600 cursor-pointer disabled:opacity-50">保存</button>
@@ -300,7 +414,7 @@ export function MemberMaster() {
                 <label className="text-xs font-medium text-gray-700">住所・場所の詳細</label>
                 <button
                   type="button"
-                  onClick={() => setShowMapPicker(true)}
+                  onClick={() => setMapPickerTarget('location')}
                   className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-pink-600 bg-pink-50 hover:bg-pink-100 rounded-lg cursor-pointer transition-colors"
                 >
                   <Map size={12} /> 地図で指定
@@ -358,13 +472,13 @@ export function MemberMaster() {
       )}
 
       {/* Map picker modal */}
-      {showMapPicker && (
-        <Modal title="地図で場所を指定" onClose={() => setShowMapPicker(false)} size="xl">
+      {mapPickerTarget && (
+        <Modal title="地図で場所を指定" onClose={() => setMapPickerTarget(null)} size="xl">
           <MapPicker
-            initialLat={lForm.lat}
-            initialLng={lForm.lng}
+            initialLat={mapPickerTarget === 'location' ? lForm.lat : mapPickerTarget === 'inline-go' ? goLoc.lat : returnLoc.lat}
+            initialLng={mapPickerTarget === 'location' ? lForm.lng : mapPickerTarget === 'inline-go' ? goLoc.lng : returnLoc.lng}
             onConfirm={handleMapConfirm}
-            onClose={() => setShowMapPicker(false)}
+            onClose={() => setMapPickerTarget(null)}
           />
         </Modal>
       )}
