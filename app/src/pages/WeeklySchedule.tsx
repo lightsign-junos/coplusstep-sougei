@@ -609,13 +609,13 @@ export function WeeklySchedule() {
                               {member ? (
                                 absent ? (
                                   <div className="cell-line text-red-400">
-                                    <div className="line-through text-[11px]">{displayName(member)} 様</div>
+                                    <div className="line-through text-[11px]">{displayName(member)}<span className="text-[9px] ml-0.5">様</span></div>
                                     <div className="text-[10px] font-bold">欠席</div>
                                   </div>
                                 ) : (
                                   <div className="cell-line group relative">
                                     <div className="font-medium text-gray-800 text-[15px] leading-tight">
-                                      {displayName(member)}<span className="print-sama"> 様</span>
+                                      {displayName(member)}<span className="print-sama text-[11px] text-gray-500 ml-0.5">様</span>
                                     </div>
                                     <div className="text-gray-600 font-mono text-[14px] font-semibold">{stop.scheduledTime}</div>
                                     <button
