@@ -214,17 +214,7 @@ export function WeeklySchedule() {
     return { route, stops, presentCount };
   };
 
-  // maxRowsはroute全体の最大order番号ベース（行番号 = order番号）
-  let maxRows = 6;
-  for (const v of activeVehicles) {
-    const route = goRoutes.find(r => r.vehicleId === v.id);
-    if (route) {
-      const maxOrder = routeStops
-        .filter(rs => rs.routeId === route.id)
-        .reduce((max, rs) => Math.max(max, rs.order), 0);
-      if (maxOrder >= maxRows) maxRows = maxOrder + 1;
-    }
-  }
+  const maxRows = 7;
   const numVehicles = activeVehicles.length;
 
   const handleAdd = (memberId: string) => {
