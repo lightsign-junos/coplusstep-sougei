@@ -104,16 +104,18 @@ export function WeeklySchedule() {
 
         const lat = loc.lat, lng = loc.lng, arrival = route.arrivalTime;
         const apiKey = import.meta.env.VITE_ORS_API_KEY as string;
+        console.log(`[pickup] ${timeKey} 座標:(${lat},${lng}) API呼び出し中...`);
         fetch(
           `https://api.openrouteservice.org/v2/directions/driving-car?api_key=${apiKey}&start=${lng},${lat}&end=${FACILITY_LNG},${FACILITY_LAT}`
         )
           .then(r => r.json())
           .then((data: { features: { properties: { summary: { duration: number } } }[] }) => {
             const mins = Math.ceil(data.features[0].properties.summary.duration / 60);
+            console.log(`[pickup] ${timeKey} 移動時間:${mins}分 → 乗車時間:${calcPickupTime(arrival, mins)}`);
             setTravelCache(c => ({ ...c, [cacheKey]: mins }));
             setPickupTimes(pt => ({ ...pt, [timeKey]: calcPickupTime(arrival, mins) }));
           })
-          .catch(() => {});
+          .catch((e) => { console.error(`[pickup] ${timeKey} エラー:`, e); });
       }
     }
 
