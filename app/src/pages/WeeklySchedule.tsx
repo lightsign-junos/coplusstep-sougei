@@ -60,13 +60,14 @@ export function WeeklySchedule() {
     setTimeout(() => setCopyToast(false), 2500);
   };
 
-  // ── 乗車時間の自動計算（OSRM） ────────────────────────────────
+  // ── 乗車時間の自動計算（ORS） ────────────────────────────────
   useEffect(() => {
+    console.log('[pickup] effect実行 vehicles:', activeVehicles.length, 'stops:', routeStops.length, 'locations:', memberLocations.length);
     const newTimes: Record<string, string> = {};
 
     for (const v of activeVehicles) {
       const route = goRoutes.find(r => r.vehicleId === v.id);
-      if (!route) continue;
+      if (!route) { console.log('[pickup] 車両にrouteなし:', v.id); continue; }
 
       for (const d of WEEK_DAYS) {
         const allStops = routeStops
@@ -94,6 +95,7 @@ export function WeeklySchedule() {
           (l.direction === 'go' || l.direction === 'both') &&
           l.lat != null && l.lng != null
         );
+        console.log(`[pickup] ${d.label} ${v.name} 最下段:${bottom.memberId} loc:`, loc ? `(${loc.lat},${loc.lng})` : 'なし（座標未登録）');
         if (!loc || loc.lat == null || loc.lng == null) continue;
 
         const cacheKey = `${loc.lat.toFixed(5)},${loc.lng.toFixed(5)}`;
