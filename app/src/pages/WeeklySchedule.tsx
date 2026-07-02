@@ -91,7 +91,13 @@ export function WeeklySchedule() {
           return mem.defaultDays.includes(d.label);
         });
 
-        if (activeStops.length === 0) continue;
+        if (activeStops.length === 0) {
+          if (d.label === '月') console.log(`[pickup] ${v.name} 月 activeStops空 allStops:`, allStops.map(s => {
+            const m = members.find(x => x.id === s.memberId);
+            return `${s.memberId}(found:${!!m},days:${m?.defaultDays ?? '?'})`;
+          }));
+          continue;
+        }
         const bottom = activeStops[activeStops.length - 1];
         const timeKey = `${d.label}-${v.id}-${bottom.memberId}`;
 
