@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format, startOfWeek, addDays, addWeeks, subWeeks } from 'date-fns';
 import { ja } from 'date-fns/locale';
@@ -22,7 +22,7 @@ export function WeeklySchedule() {
   const navigate = useNavigate();
 
   const {
-    vehicles, routes, routeStops, members, staff, dailyOverrides, weeklyDayOverrides,
+    vehicles, routes, routeStops, members, memberLocations, staff, dailyOverrides, weeklyDayOverrides,
     addRouteStop, updateRouteStop,
     updateRoute, addWeeklyDayOverride, removeWeeklyDayOverride,
   } = useDataStore();
@@ -34,13 +34,103 @@ export function WeeklySchedule() {
   const [copyToast, setCopyToast] = useState(false);
   const [picking, setPicking] = useState<{ dayLabel: string; vehicleId: string; rowIdx: number } | null>(null);
   const [editingStaff, setEditingStaff] = useState<{ vehicleId: string; field: 'driverId' | 'attendantId' } | null>(null);
+  // 乗車時間計算: key="dayLabel-vehicleId-memberId" → "HH:MM"
+  const [pickupTimes, setPickupTimes] = useState<Record<string, string>>({});
+  // OSRM結果キャッシュ: key="lat,lng" → 分
+  const [travelCache, setTravelCache] = useState<Record<string, number>>({});
 
   const goRoutes = routes.filter(r => r.direction === 'go');
+
+  // 事業所（昭和島教室）の座標
+  const FACILITY_LAT = 35.565;
+  const FACILITY_LNG = 139.784;
+
+  const calcPickupTime = (arrivalTime: string, travelMins: number): string => {
+    const [h, m] = arrivalTime.split(':').map(Number);
+    const total = ((h * 60 + m - travelMins) % 1440 + 1440) % 1440;
+    return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+  };
 
   const handleCopyWeek = () => {
     setCopyToast(true);
     setTimeout(() => setCopyToast(false), 2500);
   };
+
+  // ── 乗車時間の自動計算（OSRM） ────────────────────────────────
+  useEffect(() => {
+    const stopsSig = routeStops.map(r => `${r.id}-${r.order}-${r.memberId}`).join();
+    const overSig  = weeklyDayOverrides.map(o => `${o.id}-${o.type}`).join();
+    const locSig   = memberLocations.map(l => `${l.id}-${l.lat}-${l.lng}`).join();
+    void stopsSig; void overSig; void locSig; // dependency tracking only
+
+    const newTimes: Record<string, string> = {};
+    const pending: Promise<void>[] = [];
+
+    for (const v of activeVehicles) {
+      const route = goRoutes.find(r => r.vehicleId === v.id);
+      if (!route) continue;
+
+      for (const d of WEEK_DAYS) {
+        const allStops = routeStops
+          .filter(rs => rs.routeId === route.id)
+          .sort((a, b) => a.order - b.order);
+
+        const activeStops = allStops.filter(s => {
+          const mem = members.find(m => m.id === s.memberId);
+          if (!mem) return false;
+          const ovs = weeklyDayOverrides.filter(
+            o => o.weekKey === weekKey && o.memberId === s.memberId &&
+                 o.vehicleId === v.id && o.dayLabel === d.label
+          );
+          if (ovs.some(o => o.type === 'remove')) return false;
+          if (ovs.some(o => o.type === 'add')) return true;
+          return mem.defaultDays.includes(d.label);
+        });
+
+        if (activeStops.length === 0) continue;
+        const bottom = activeStops[activeStops.length - 1];
+        const timeKey = `${d.label}-${v.id}-${bottom.memberId}`;
+
+        const loc = memberLocations.find(l =>
+          l.memberId === bottom.memberId &&
+          (l.direction === 'go' || l.direction === 'both') &&
+          l.lat != null && l.lng != null
+        );
+        if (!loc || loc.lat == null || loc.lng == null) continue;
+
+        const cacheKey = `${loc.lat.toFixed(5)},${loc.lng.toFixed(5)}`;
+        if (travelCache[cacheKey] !== undefined) {
+          newTimes[timeKey] = calcPickupTime(route.arrivalTime, travelCache[cacheKey]);
+          continue;
+        }
+
+        const lat = loc.lat, lng = loc.lng, arrival = route.arrivalTime;
+        pending.push(
+          fetch(
+            `https://router.project-osrm.org/route/v1/driving/${lng},${lat};${FACILITY_LNG},${FACILITY_LAT}?overview=false`,
+            { headers: { 'User-Agent': 'coplus-step-sougei/1.0' } }
+          )
+            .then(r => r.json())
+            .then(data => {
+              const mins = Math.ceil(data.routes[0].duration / 60);
+              setTravelCache(c => ({ ...c, [cacheKey]: mins }));
+              setPickupTimes(pt => ({ ...pt, [timeKey]: calcPickupTime(arrival, mins) }));
+            })
+            .catch(() => {})
+        );
+      }
+    }
+
+    if (Object.keys(newTimes).length > 0) {
+      setPickupTimes(pt => ({ ...pt, ...newTimes }));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    weekKey,
+    routeStops.map(r => `${r.id}-${r.order}-${r.memberId}`).join(),
+    weeklyDayOverrides.map(o => `${o.id}-${o.type}`).join(),
+    memberLocations.map(l => `${l.id}-${l.lat}-${l.lng}`).join(),
+  ]);
 
   // ── Table view helpers ─────────────────────────────────────
 
@@ -80,11 +170,12 @@ export function WeeklySchedule() {
 
   const getDayVehicleData = (dateStr: string, dayLabel: string, vehicleId: string) => {
     const route = goRoutes.find(r => r.vehicleId === vehicleId);
-    if (!route) return { route: null, stops: [], presentCount: 0 };
+    if (!route) return { route: null, stops: [], presentCount: 0, bottomMemberId: null as string | null };
     const allStops = getStops(route.id);
     const stops = allStops.filter(s => isActiveOnDay(s.memberId, vehicleId, dayLabel));
     const presentCount = stops.filter(s => !isAbsent(dateStr, s.memberId, route.id)).length;
-    return { route, stops, presentCount };
+    const bottomMemberId = stops.length > 0 ? stops[stops.length - 1].memberId : null;
+    return { route, stops, presentCount, bottomMemberId };
   };
 
   const maxRows = 7;
@@ -315,13 +406,14 @@ export function WeeklySchedule() {
                     <td className="border border-gray-300 bg-gray-50 px-1 py-1 text-center text-xs text-gray-400 w-14">{rowIdx + 1}</td>
                     {weekDates.flatMap(d =>
                       activeVehicles.map(v => {
-                        const { route, stops } = getDayVehicleData(d.dateStr, d.label, v.id);
-                        // 行番号(rowIdx+1) = order番号で直接検索
+                        const { route, stops, bottomMemberId } = getDayVehicleData(d.dateStr, d.label, v.id);
                         const stop = stops.find(s => s.order === rowIdx + 1);
                         const member = stop ? getMember(stop.memberId) : null;
                         const absent = stop && route ? isAbsent(d.dateStr, stop.memberId, route.id) : false;
                         const isToday = d.dateStr === today;
                         const showAdd = !member && !!route;
+                        const isBottom = !!stop && stop.memberId === bottomMemberId;
+                        const pickupTime = isBottom ? pickupTimes[`${d.label}-${v.id}-${stop.memberId}`] : undefined;
                         return (
                           <td
                             key={`cell-${d.label}-${v.id}-${rowIdx}`}
@@ -339,6 +431,9 @@ export function WeeklySchedule() {
                                   <div className="font-medium text-gray-800 text-[15px] leading-tight">
                                     {displayName(member)}<span className="print-sama text-[11px] text-gray-500 ml-0.5">様</span>
                                   </div>
+                                  {pickupTime && (
+                                    <div className="text-[11px] font-mono font-semibold text-blue-600 mt-0.5">{pickupTime}</div>
+                                  )}
                                   <button
                                     onClick={e => { e.stopPropagation(); handleRemove(member.id, d.label, v.id); }}
                                     className="absolute -top-1 -right-1 w-4 h-4 bg-red-100 text-red-500 rounded-full text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity no-print"
