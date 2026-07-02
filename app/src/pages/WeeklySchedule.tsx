@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format, startOfWeek, addDays, addWeeks, subWeeks } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, Printer, Plus, Copy, Check } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Printer, Plus, Copy } from 'lucide-react';
 import { useDataStore } from '../store/dataStore';
 import { getMemberDisplayName } from '../lib/memberDisplay';
 import { Modal } from '../components/common/Modal';
@@ -23,7 +23,7 @@ export function WeeklySchedule() {
 
   const {
     vehicles, routes, routeStops, members, staff, dailyOverrides, weeklyDayOverrides,
-    addRouteStop, updateRouteStop, deleteRouteStop,
+    addRouteStop, updateRouteStop,
     updateRoute, addWeeklyDayOverride, removeWeeklyDayOverride,
   } = useDataStore();
 
