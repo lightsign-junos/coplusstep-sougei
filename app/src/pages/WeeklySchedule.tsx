@@ -62,8 +62,12 @@ export function WeeklySchedule() {
 
   // ── 乗車時間の自動計算（ORS） ────────────────────────────────
   useEffect(() => {
-    console.log('[pickup] effect実行 vehicles:', activeVehicles.length, 'stops:', routeStops.length);
-    console.log('[pickup] locations:', memberLocations.map(l => `${l.memberId}:lat=${l.lat},lng=${l.lng}`));
+    console.log('[pickup] weekKey:', weekKey, 'vehicles:', activeVehicles.length, 'routeStops:', routeStops.length);
+    for (const v of activeVehicles) {
+      const route = goRoutes.find(r => r.vehicleId === v.id);
+      const stops = routeStops.filter(rs => rs.routeId === route?.id);
+      console.log(`[pickup] ${v.name} routeId:${route?.id ?? 'なし'} stops:`, stops.map(s => `${s.memberId}@order${s.order}`));
+    }
     const newTimes: Record<string, string> = {};
 
     for (const v of activeVehicles) {
