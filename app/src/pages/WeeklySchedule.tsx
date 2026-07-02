@@ -182,14 +182,28 @@ export function WeeklySchedule() {
 
     const targetOrder = rowIdx + 1;
 
-    // 車両へのrouteStop（乗車割当）がなければ追加
-    const hasStop = routeStops.some(rs => rs.routeId === route.id && rs.memberId === memberId);
-    if (!hasStop) {
-      // targetOrder以上のstopを1つ後ろにずらして空きを作る
+    const existingStop = routeStops.find(rs => rs.routeId === route.id && rs.memberId === memberId);
+    if (!existingStop) {
+      // 新規追加: targetOrder以上を1つ後ろにずらして挿入
       routeStops
         .filter(rs => rs.routeId === route.id && rs.order >= targetOrder)
         .forEach(rs => updateRouteStop({ ...rs, order: rs.order + 1 }));
       addRouteStop({ id: `rs-${Date.now()}`, routeId: route.id, memberId, locationId: '', order: targetOrder, scheduledTime: '00:00' });
+    } else if (existingStop.order !== targetOrder) {
+      // 既存stopの行を移動
+      const currentOrder = existingStop.order;
+      if (currentOrder > targetOrder) {
+        // 上に移動: target〜current-1 を1つ下げる
+        routeStops
+          .filter(rs => rs.routeId === route.id && rs.order >= targetOrder && rs.order < currentOrder)
+          .forEach(rs => updateRouteStop({ ...rs, order: rs.order + 1 }));
+      } else {
+        // 下に移動: current+1〜target を1つ上げる
+        routeStops
+          .filter(rs => rs.routeId === route.id && rs.order > currentOrder && rs.order <= targetOrder)
+          .forEach(rs => updateRouteStop({ ...rs, order: rs.order - 1 }));
+      }
+      updateRouteStop({ ...existingStop, order: targetOrder });
     }
 
     // defaultDaysにない曜日 → この週だけの追加オーバーライドを作成（defaultDaysは変更しない）
