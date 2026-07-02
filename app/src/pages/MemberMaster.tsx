@@ -104,11 +104,11 @@ export function MemberMaster() {
 
   const handleMapConfirm = (lat: number, lng: number, address: string) => {
     if (mapPickerTarget === 'location') {
-      setLForm(f => ({ ...f, lat, lng, address }));
+      setLForm(f => ({ ...f, lat, lng, address, name: f.name || address }));
     } else if (mapPickerTarget === 'inline-go') {
-      setGoLoc(f => ({ ...f, lat, lng, address }));
+      setGoLoc(f => ({ ...f, lat, lng, address, name: f.name || address }));
     } else if (mapPickerTarget === 'inline-return') {
-      setReturnLoc(f => ({ ...f, lat, lng, address }));
+      setReturnLoc(f => ({ ...f, lat, lng, address, name: f.name || address }));
     }
     setMapPickerTarget(null);
   };
