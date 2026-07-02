@@ -36,8 +36,12 @@ export function WeeklySchedule() {
   const [editingStaff, setEditingStaff] = useState<{ vehicleId: string; field: 'driverId' | 'attendantId' } | null>(null);
   // 乗車時間計算: key="dayLabel-vehicleId-memberId" → "HH:MM"
   const [pickupTimes, setPickupTimes] = useState<Record<string, string>>({});
-  // OSRM結果キャッシュ: key="lat,lng" → 分
+  // ORS結果キャッシュ: key="lat,lng" → 分
   const [travelCache, setTravelCache] = useState<Record<string, number>>({});
+  // 計算中のkey
+  const [loadingTimes, setLoadingTimes] = useState<Set<string>>(new Set());
+  // 座標なしのmemberId
+  const [noCoordIds, setNoCoordIds] = useState<Set<string>>(new Set());
 
   const goRoutes = routes.filter(r => r.direction === 'go');
 
@@ -63,6 +67,8 @@ export function WeeklySchedule() {
   // ── 乗車時間の自動計算（ORS） ────────────────────────────────
   useEffect(() => {
     const newTimes: Record<string, string> = {};
+    const newLoading = new Set<string>();
+    const newNoCoord = new Set<string>();
 
     for (const v of activeVehicles) {
       const route = goRoutes.find(r => r.vehicleId === v.id);
@@ -89,7 +95,10 @@ export function WeeklySchedule() {
           (l.direction === 'go' || l.direction === 'both') &&
           l.lat != null && l.lng != null
         );
-        if (!loc || loc.lat == null || loc.lng == null) continue;
+        if (!loc || loc.lat == null || loc.lng == null) {
+          newNoCoord.add(timeKey);
+          continue;
+        }
 
         const cacheKey = `${loc.lat.toFixed(5)},${loc.lng.toFixed(5)}`;
         if (travelCache[cacheKey] !== undefined) {
@@ -97,6 +106,7 @@ export function WeeklySchedule() {
           continue;
         }
 
+        newLoading.add(timeKey);
         const lat = loc.lat, lng = loc.lng, arrival = route.arrivalTime;
         const apiKey = import.meta.env.VITE_ORS_API_KEY as string;
         fetch(
@@ -107,14 +117,25 @@ export function WeeklySchedule() {
             const mins = Math.ceil(data.features[0].properties.summary.duration / 60);
             setTravelCache(c => ({ ...c, [cacheKey]: mins }));
             setPickupTimes(pt => ({ ...pt, [timeKey]: calcPickupTime(arrival, mins) }));
+            setLoadingTimes(s => { const n = new Set(s); n.delete(timeKey); return n; });
           })
-          .catch(() => {});
+          .catch((e) => {
+            console.error('[ORS] API error:', e, { timeKey, lat, lng });
+            setLoadingTimes(s => { const n = new Set(s); n.delete(timeKey); return n; });
+            setPickupTimes(pt => ({ ...pt, [timeKey]: 'ERR' }));
+          });
       }
     }
 
     if (Object.keys(newTimes).length > 0) {
       setPickupTimes(pt => ({ ...pt, ...newTimes }));
     }
+    setLoadingTimes(prev => {
+      const merged = new Set(prev);
+      newLoading.forEach(k => merged.add(k));
+      return merged;
+    });
+    setNoCoordIds(newNoCoord);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     weekKey,
@@ -394,7 +415,10 @@ export function WeeklySchedule() {
                         const isToday = d.dateStr === today;
                         const showAdd = !member && !!route;
                         const isBottom = !!stop && stop.memberId === bottomMemberId;
-                        const pickupTime = isBottom ? pickupTimes[`${d.label}-${v.id}-${stop.memberId}`] : undefined;
+                        const timeKey2 = isBottom ? `${d.label}-${v.id}-${stop!.memberId}` : '';
+                        const pickupTime = isBottom ? pickupTimes[timeKey2] : undefined;
+                        const isLoadingTime = isBottom && loadingTimes.has(timeKey2);
+                        const isNoCoord = isBottom && noCoordIds.has(timeKey2);
                         return (
                           <td
                             key={`cell-${d.label}-${v.id}-${rowIdx}`}
@@ -414,8 +438,17 @@ export function WeeklySchedule() {
                                   <div className="font-medium text-gray-800 text-[15px] leading-tight">
                                     {displayName(member)}<span className="print-sama text-[11px] text-gray-500 ml-0.5">様</span>
                                   </div>
-                                  {pickupTime && (
+                                  {pickupTime && pickupTime !== 'ERR' && (
                                     <div className="text-[11px] font-mono font-semibold text-blue-600 mt-0.5">{pickupTime}</div>
+                                  )}
+                                  {pickupTime === 'ERR' && (
+                                    <div className="text-[10px] text-red-500 mt-0.5">API失敗</div>
+                                  )}
+                                  {isLoadingTime && !pickupTime && (
+                                    <div className="text-[10px] text-gray-400 mt-0.5">計算中...</div>
+                                  )}
+                                  {isNoCoord && (
+                                    <div className="text-[10px] text-orange-500 mt-0.5">座標なし</div>
                                   )}
                                   <button
                                     onClick={e => { e.stopPropagation(); handleRemove(member.id, d.label, v.id); }}
