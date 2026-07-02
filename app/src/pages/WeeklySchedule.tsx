@@ -45,9 +45,9 @@ export function WeeklySchedule() {
   const weekStart = startOfWeek(weekBase, { weekStartsOn: 1 });
   const weekKey = format(weekStart, 'yyyy-MM-dd');
 
-  // 事業所（昭和島教室）の座標
-  const FACILITY_LAT = 35.565;
-  const FACILITY_LNG = 139.784;
+  // 事業所（昭和島教室）〒143-0004 東京都大田区昭和島1-2-8
+  const FACILITY_LAT = 35.5702778;
+  const FACILITY_LNG = 139.7513047;
 
   const calcPickupTime = (arrivalTime: string, travelMins: number): string => {
     const [h, m] = arrivalTime.split(':').map(Number);
