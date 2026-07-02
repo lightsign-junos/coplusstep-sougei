@@ -73,17 +73,12 @@ export function WeeklySchedule() {
           .filter(rs => rs.routeId === route.id)
           .sort((a, b) => a.order - b.order);
 
-        const activeStops = allStops.filter(s => {
-          const mem = members.find(m => m.id === s.memberId);
-          if (!mem) return false;
-          const ovs = weeklyDayOverrides.filter(
+        const activeStops = allStops.filter(s =>
+          weeklyDayOverrides.some(
             o => o.weekKey === weekKey && o.memberId === s.memberId &&
-                 o.vehicleId === v.id && o.dayLabel === d.label
-          );
-          if (ovs.some(o => o.type === 'remove')) return false;
-          if (ovs.some(o => o.type === 'add')) return true;
-          return mem.defaultDays.includes(d.label);
-        });
+                 o.vehicleId === v.id && o.dayLabel === d.label && o.type === 'add'
+          )
+        );
 
         if (activeStops.length === 0) continue;
         const bottom = activeStops[activeStops.length - 1];
@@ -148,18 +143,11 @@ export function WeeklySchedule() {
       o => o.date === dateStr && o.memberId === memberId && o.routeId === routeId && o.type === 'absent'
     );
 
-  // defaultDays をベースに、週次オーバーライドで追加・除外を反映
+  // 週次一覧への配置は完全手動（addオーバーライドがある場合のみ表示）
   const isActiveOnDay = (memberId: string, vehicleId: string, dayLabel: string): boolean => {
-    const member = getMember(memberId);
-    if (!member) return false;
-    const overrides = weeklyDayOverrides.filter(
-      o => o.weekKey === weekKey && o.memberId === memberId && o.vehicleId === vehicleId && o.dayLabel === dayLabel
+    return weeklyDayOverrides.some(
+      o => o.weekKey === weekKey && o.memberId === memberId && o.vehicleId === vehicleId && o.dayLabel === dayLabel && o.type === 'add'
     );
-    const removed = overrides.some(o => o.type === 'remove');
-    const added   = overrides.some(o => o.type === 'add');
-    if (removed) return false;
-    if (added) return true;
-    return member.defaultDays.includes(dayLabel);
   };
 
   const getDayVehicleData = (dateStr: string, dayLabel: string, vehicleId: string) => {
@@ -211,51 +199,26 @@ export function WeeklySchedule() {
       updateRouteStop({ ...existingStop, order: targetOrder });
     }
 
-    // defaultDaysにない曜日 → この週だけの追加オーバーライドを作成（defaultDaysは変更しない）
-    const member = members.find(m => m.id === memberId);
-    if (member && !member.defaultDays.includes(dayLabel)) {
-      // 除外オーバーライドがあれば削除、なければ追加オーバーライドを作成
-      const removeOverride = weeklyDayOverrides.find(
-        o => o.weekKey === weekKey && o.memberId === memberId && o.vehicleId === vehicleId && o.dayLabel === dayLabel && o.type === 'remove'
-      );
-      if (removeOverride) {
-        removeWeeklyDayOverride(removeOverride.id);
-      } else {
-        addWeeklyDayOverride({ id: `wdo-${Date.now()}`, weekKey, memberId, vehicleId, dayLabel, type: 'add' });
-      }
-    }
-    // defaultDaysにある曜日 → 除外オーバーライドがあれば削除
-    else if (member && member.defaultDays.includes(dayLabel)) {
-      const removeOverride = weeklyDayOverrides.find(
-        o => o.weekKey === weekKey && o.memberId === memberId && o.vehicleId === vehicleId && o.dayLabel === dayLabel && o.type === 'remove'
-      );
-      if (removeOverride) removeWeeklyDayOverride(removeOverride.id);
+    // 同じ日の他車両addオーバーライドを削除（1日1台制限）
+    weeklyDayOverrides
+      .filter(o => o.weekKey === weekKey && o.memberId === memberId && o.dayLabel === dayLabel && o.vehicleId !== vehicleId && o.type === 'add')
+      .forEach(o => removeWeeklyDayOverride(o.id));
+    // この車両+曜日のaddオーバーライドを作成
+    const existingAdd = weeklyDayOverrides.find(
+      o => o.weekKey === weekKey && o.memberId === memberId && o.vehicleId === vehicleId && o.dayLabel === dayLabel && o.type === 'add'
+    );
+    if (!existingAdd) {
+      addWeeklyDayOverride({ id: `wdo-${Date.now()}`, weekKey, memberId, vehicleId, dayLabel, type: 'add' });
     }
 
     setPicking(null);
   };
 
   const handleRemove = (memberId: string, dayLabel: string, vehicleId: string) => {
-    const member = members.find(m => m.id === memberId);
-    if (!member) return;
-
-    if (member.defaultDays.includes(dayLabel)) {
-      // defaultDaysにある → この週だけの除外オーバーライドを作成
-      const addOverride = weeklyDayOverrides.find(
-        o => o.weekKey === weekKey && o.memberId === memberId && o.vehicleId === vehicleId && o.dayLabel === dayLabel && o.type === 'add'
-      );
-      if (addOverride) {
-        removeWeeklyDayOverride(addOverride.id);
-      } else {
-        addWeeklyDayOverride({ id: `wdo-${Date.now()}`, weekKey, memberId, vehicleId, dayLabel, type: 'remove' });
-      }
-    } else {
-      // 追加オーバーライドで表示されていた → そのオーバーライドを削除
-      const addOverride = weeklyDayOverrides.find(
-        o => o.weekKey === weekKey && o.memberId === memberId && o.vehicleId === vehicleId && o.dayLabel === dayLabel && o.type === 'add'
-      );
-      if (addOverride) removeWeeklyDayOverride(addOverride.id);
-    }
+    const addOverride = weeklyDayOverrides.find(
+      o => o.weekKey === weekKey && o.memberId === memberId && o.vehicleId === vehicleId && o.dayLabel === dayLabel && o.type === 'add'
+    );
+    if (addOverride) removeWeeklyDayOverride(addOverride.id);
   };
 
   const availableForPicking = () => {
@@ -420,7 +383,7 @@ export function WeeklySchedule() {
               </thead>
               <tbody>
                 {Array.from({ length: maxRows }, (_, rowIdx) => (
-                  <tr key={rowIdx} className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/60'}>
+                  <tr key={rowIdx} style={{height: '52px'}} className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/60'}>
                     <td className="border border-gray-300 bg-gray-50 px-1 py-1 text-center text-xs text-gray-400 w-14">{rowIdx + 1}</td>
                     {weekDates.flatMap(d =>
                       activeVehicles.map(v => {
@@ -436,8 +399,10 @@ export function WeeklySchedule() {
                           <td
                             key={`cell-${d.label}-${v.id}-${rowIdx}`}
                             onClick={showAdd ? () => setPicking({ dayLabel: d.label, vehicleId: v.id, rowIdx }) : undefined}
-                            className={`border border-gray-200 px-2 py-2 text-center align-middle min-w-[80px] ${isToday ? 'bg-pink-50/40' : ''} ${showAdd ? 'cursor-pointer hover:bg-gray-50' : ''}`}
+                            className={`border border-gray-200 px-0 py-0 text-center align-middle min-w-[80px] ${isToday ? 'bg-pink-50/40' : ''} ${showAdd ? 'cursor-pointer hover:bg-gray-50' : ''}`}
+                            style={{height: '52px', maxHeight: '52px', overflow: 'hidden'}}
                           >
+                            <div className="h-[52px] flex flex-col items-center justify-center px-2 overflow-hidden">
                             {member ? (
                               absent ? (
                                 <div className="cell-line text-red-400">
@@ -465,6 +430,7 @@ export function WeeklySchedule() {
                             ) : (
                               <span className="text-gray-200">―</span>
                             )}
+                            </div>
                           </td>
                         );
                       })
