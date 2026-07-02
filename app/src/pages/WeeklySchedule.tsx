@@ -23,7 +23,7 @@ export function WeeklySchedule() {
 
   const {
     vehicles, routes, routeStops, members, memberLocations, staff, dailyOverrides, weeklyDayOverrides,
-    addRouteStop, updateRouteStop,
+    addRouteStop, updateRouteStop, deleteRouteStop,
     updateRoute, addWeeklyDayOverride, removeWeeklyDayOverride, clearWeekOverrides,
   } = useDataStore();
 
@@ -185,6 +185,10 @@ export function WeeklySchedule() {
 
     const existingStop = routeStops.find(rs => rs.routeId === route.id && rs.memberId === memberId);
     if (!existingStop) {
+      // 他車両のrouteStopを削除（1人は1台のみ）
+      routeStops
+        .filter(rs => rs.memberId === memberId && rs.routeId !== route.id)
+        .forEach(rs => deleteRouteStop(rs.id));
       // 新規追加: targetOrder以上を1つ後ろにずらして挿入
       routeStops
         .filter(rs => rs.routeId === route.id && rs.order >= targetOrder)
