@@ -24,7 +24,7 @@ export function WeeklySchedule() {
   const {
     vehicles, routes, routeStops, members, memberLocations, staff, dailyOverrides, weeklyDayOverrides,
     addRouteStop, updateRouteStop,
-    updateRoute, addWeeklyDayOverride, removeWeeklyDayOverride,
+    updateRoute, addWeeklyDayOverride, removeWeeklyDayOverride, clearWeekOverrides,
   } = useDataStore();
 
   const allActiveVehicles = vehicles.filter(v => v.active);
@@ -62,14 +62,11 @@ export function WeeklySchedule() {
 
   // ── 乗車時間の自動計算（ORS） ────────────────────────────────
   useEffect(() => {
-    console.log('[pickup] weekKey:', weekKey, 'vehicles:', activeVehicles.length, 'routeStops:', routeStops.length);
-    const thisWeekOverrides = weeklyDayOverrides.filter(o => o.weekKey === weekKey);
-    console.log('[pickup] 今週のoverrides:', thisWeekOverrides.map(o => `${o.memberId}/${o.vehicleId}/${o.dayLabel}:${o.type}`));
     const newTimes: Record<string, string> = {};
 
     for (const v of activeVehicles) {
       const route = goRoutes.find(r => r.vehicleId === v.id);
-      if (!route) { console.log('[pickup] 車両にrouteなし:', v.id); continue; }
+      if (!route) continue;
 
       for (const d of WEEK_DAYS) {
         const allStops = routeStops
@@ -88,13 +85,7 @@ export function WeeklySchedule() {
           return mem.defaultDays.includes(d.label);
         });
 
-        if (activeStops.length === 0) {
-          if (d.label === '月') console.log(`[pickup] ${v.name} 月 activeStops空 allStops:`, allStops.map(s => {
-            const m = members.find(x => x.id === s.memberId);
-            return `${s.memberId}(found:${!!m},days:${m?.defaultDays ?? '?'})`;
-          }));
-          continue;
-        }
+        if (activeStops.length === 0) continue;
         const bottom = activeStops[activeStops.length - 1];
         const timeKey = `${d.label}-${v.id}-${bottom.memberId}`;
 
@@ -103,7 +94,6 @@ export function WeeklySchedule() {
           (l.direction === 'go' || l.direction === 'both') &&
           l.lat != null && l.lng != null
         );
-        console.log(`[pickup] ${d.label} ${v.name} 最下段:${bottom.memberId} loc:`, loc ? `(${loc.lat},${loc.lng})` : 'なし（座標未登録）');
         if (!loc || loc.lat == null || loc.lng == null) continue;
 
         const cacheKey = `${loc.lat.toFixed(5)},${loc.lng.toFixed(5)}`;
@@ -114,18 +104,16 @@ export function WeeklySchedule() {
 
         const lat = loc.lat, lng = loc.lng, arrival = route.arrivalTime;
         const apiKey = import.meta.env.VITE_ORS_API_KEY as string;
-        console.log(`[pickup] ${timeKey} 座標:(${lat},${lng}) API呼び出し中...`);
         fetch(
           `https://api.openrouteservice.org/v2/directions/driving-car?api_key=${apiKey}&start=${lng},${lat}&end=${FACILITY_LNG},${FACILITY_LAT}`
         )
           .then(r => r.json())
           .then((data: { features: { properties: { summary: { duration: number } } }[] }) => {
             const mins = Math.ceil(data.features[0].properties.summary.duration / 60);
-            console.log(`[pickup] ${timeKey} 移動時間:${mins}分 → 乗車時間:${calcPickupTime(arrival, mins)}`);
             setTravelCache(c => ({ ...c, [cacheKey]: mins }));
             setPickupTimes(pt => ({ ...pt, [timeKey]: calcPickupTime(arrival, mins) }));
           })
-          .catch((e) => { console.error(`[pickup] ${timeKey} エラー:`, e); });
+          .catch(() => {});
       }
     }
 
@@ -296,6 +284,12 @@ export function WeeklySchedule() {
             className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
           >
             <Copy size={13} /> 前週をコピー
+          </button>
+          <button
+            onClick={() => { if (confirm('今週の配置変更をすべてリセットしますか？\n（登録済みの利用日に戻ります）')) clearWeekOverrides(weekKey); }}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-red-200 text-red-600 text-xs font-medium rounded-lg hover:bg-red-50 cursor-pointer transition-colors"
+          >
+            今週リセット
           </button>
           <button onClick={() => setWeekBase(w => subWeeks(w, 1))} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
             <ChevronLeft size={16} />

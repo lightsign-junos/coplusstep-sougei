@@ -125,6 +125,7 @@ interface DataState {
   // Weekly day override actions
   addWeeklyDayOverride: (override: WeeklyDayOverride) => void;
   removeWeeklyDayOverride: (id: string) => void;
+  clearWeekOverrides: (weekKey: string) => void;
 
   // Vel toggle
   setVelEnabled: (weekStart: string, enabled: boolean) => void;
@@ -272,6 +273,7 @@ export const useDataStore = create<DataState>()(
 
       addWeeklyDayOverride: (o) => set(s => ({ weeklyDayOverrides: [...s.weeklyDayOverrides, o] })),
       removeWeeklyDayOverride: (id) => set(s => ({ weeklyDayOverrides: s.weeklyDayOverrides.filter(x => x.id !== id) })),
+      clearWeekOverrides: (weekKey) => set(s => ({ weeklyDayOverrides: s.weeklyDayOverrides.filter(x => x.weekKey !== weekKey) })),
 
       setVelEnabled: (weekStart, enabled) => set(s => ({ velWeeks: { ...s.velWeeks, [weekStart]: enabled } })),
       isVelEnabled: (weekStart) => get().velWeeks[weekStart] ?? false,
