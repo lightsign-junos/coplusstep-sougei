@@ -103,12 +103,13 @@ export function WeeklySchedule() {
         }
 
         const lat = loc.lat, lng = loc.lng, arrival = route.arrivalTime;
+        const apiKey = import.meta.env.VITE_ORS_API_KEY as string;
         fetch(
-          `https://router.project-osrm.org/route/v1/driving/${lng},${lat};${FACILITY_LNG},${FACILITY_LAT}?overview=false`
+          `https://api.openrouteservice.org/v2/directions/driving-car?api_key=${apiKey}&start=${lng},${lat}&end=${FACILITY_LNG},${FACILITY_LAT}`
         )
           .then(r => r.json())
-          .then((data: { routes: { duration: number }[] }) => {
-            const mins = Math.ceil(data.routes[0].duration / 60);
+          .then((data: { features: { properties: { summary: { duration: number } } }[] }) => {
+            const mins = Math.ceil(data.features[0].properties.summary.duration / 60);
             setTravelCache(c => ({ ...c, [cacheKey]: mins }));
             setPickupTimes(pt => ({ ...pt, [timeKey]: calcPickupTime(arrival, mins) }));
           })
