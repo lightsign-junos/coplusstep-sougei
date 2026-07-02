@@ -41,6 +41,10 @@ export function WeeklySchedule() {
 
   const goRoutes = routes.filter(r => r.direction === 'go');
 
+  // weekKeyをuseEffectより先に定義（TDZ回避）
+  const weekStart = startOfWeek(weekBase, { weekStartsOn: 1 });
+  const weekKey = format(weekStart, 'yyyy-MM-dd');
+
   // 事業所（昭和島教室）の座標
   const FACILITY_LAT = 35.565;
   const FACILITY_LNG = 139.784;
@@ -58,13 +62,7 @@ export function WeeklySchedule() {
 
   // ── 乗車時間の自動計算（OSRM） ────────────────────────────────
   useEffect(() => {
-    const stopsSig = routeStops.map(r => `${r.id}-${r.order}-${r.memberId}`).join();
-    const overSig  = weeklyDayOverrides.map(o => `${o.id}-${o.type}`).join();
-    const locSig   = memberLocations.map(l => `${l.id}-${l.lat}-${l.lng}`).join();
-    void stopsSig; void overSig; void locSig; // dependency tracking only
-
     const newTimes: Record<string, string> = {};
-    const pending: Promise<void>[] = [];
 
     for (const v of activeVehicles) {
       const route = goRoutes.find(r => r.vehicleId === v.id);
@@ -105,19 +103,16 @@ export function WeeklySchedule() {
         }
 
         const lat = loc.lat, lng = loc.lng, arrival = route.arrivalTime;
-        pending.push(
-          fetch(
-            `https://router.project-osrm.org/route/v1/driving/${lng},${lat};${FACILITY_LNG},${FACILITY_LAT}?overview=false`,
-            { headers: { 'User-Agent': 'coplus-step-sougei/1.0' } }
-          )
-            .then(r => r.json())
-            .then(data => {
-              const mins = Math.ceil(data.routes[0].duration / 60);
-              setTravelCache(c => ({ ...c, [cacheKey]: mins }));
-              setPickupTimes(pt => ({ ...pt, [timeKey]: calcPickupTime(arrival, mins) }));
-            })
-            .catch(() => {})
-        );
+        fetch(
+          `https://router.project-osrm.org/route/v1/driving/${lng},${lat};${FACILITY_LNG},${FACILITY_LAT}?overview=false`
+        )
+          .then(r => r.json())
+          .then((data: { routes: { duration: number }[] }) => {
+            const mins = Math.ceil(data.routes[0].duration / 60);
+            setTravelCache(c => ({ ...c, [cacheKey]: mins }));
+            setPickupTimes(pt => ({ ...pt, [timeKey]: calcPickupTime(arrival, mins) }));
+          })
+          .catch(() => {});
       }
     }
 
@@ -134,8 +129,6 @@ export function WeeklySchedule() {
 
   // ── Table view helpers ─────────────────────────────────────
 
-  const weekStart = startOfWeek(weekBase, { weekStartsOn: 1 });
-  const weekKey = format(weekStart, 'yyyy-MM-dd');
   const weekDates = WEEK_DAYS.map(d => ({
     ...d,
     date: addDays(weekStart, d.idx - 1),
