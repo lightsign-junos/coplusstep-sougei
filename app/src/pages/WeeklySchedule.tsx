@@ -188,13 +188,6 @@ export function WeeklySchedule() {
       o => o.date === dateStr && o.memberId === memberId && o.routeId === routeId && o.type === 'absent'
     );
 
-  // 週次一覧への配置は完全手動（addオーバーライドがある場合のみ表示）
-  const isActiveOnDay = (memberId: string, vehicleId: string, dayLabel: string): boolean => {
-    return weeklyDayOverrides.some(
-      o => o.weekKey === weekKey && o.memberId === memberId && o.vehicleId === vehicleId && o.dayLabel === dayLabel && o.type === 'add'
-    );
-  };
-
   // マス位置はオーバーライドのrowに記録（マスは完全に独立。他の配置に影響しない）
   // rowを持たない古いデータは空いている行へ順に割り当てる
   const getPlacements = (dayLabel: string, vehicleId: string): { memberId: string; row: number }[] => {
