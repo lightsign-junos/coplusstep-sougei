@@ -81,7 +81,7 @@ export function RouteMaster() {
 
   const [form, setForm] = useState({
     name: '', direction: 'go' as const, vehicleId: '', driverId: '',
-    attendantId: '', arrivalTime: '09:30', notes: '',
+    attendantId: '', arrivalTime: '10:55', notes: '',
   });
 
   const sensors = useSensors(
@@ -108,7 +108,7 @@ export function RouteMaster() {
 
   const openCreateRoute = () => {
     setEditingRoute(null);
-    setForm({ name: '', direction: 'go', vehicleId: vehicles[0]?.id ?? '', driverId: '', attendantId: '', arrivalTime: '09:30', notes: '' });
+    setForm({ name: '', direction: 'go', vehicleId: vehicles[0]?.id ?? '', driverId: '', attendantId: '', arrivalTime: '10:55', notes: '' });
     setShowRouteModal(true);
   };
 

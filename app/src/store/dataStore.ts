@@ -318,6 +318,14 @@ export const useDataStore = create<DataState>()(
         if (fixed.some((m, i) => m.defaultDays !== state.members[i].defaultDays)) {
           useDataStore.setState({ members: fixed });
         }
+        // 行き便の到着時刻は10:55固定
+        if (state.routes.some(r => r.direction === 'go' && r.arrivalTime !== '10:55')) {
+          useDataStore.setState({
+            routes: state.routes.map(r =>
+              r.direction === 'go' ? { ...r, arrivalTime: '10:55' } : r
+            ),
+          });
+        }
       },
     }
   )

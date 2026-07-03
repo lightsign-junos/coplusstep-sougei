@@ -51,6 +51,10 @@ export async function gasGetAll(): Promise<GASData | null> {
     if (!json.ok) return null;
     const data = fixGASValues(json.data) as GASData;
     data.members = normalizeMembers(data.members);
+    // 行き便の到着時刻は10:55固定
+    data.routes = (data.routes ?? []).map(r =>
+      r.direction === 'go' ? { ...r, arrivalTime: '10:55' } : r
+    );
     return data;
   } catch {
     return null;

@@ -354,16 +354,7 @@ export function WeeklySchedule() {
                         <th key={`veh-${d.label}-${v.id}`} className={`border border-gray-300 px-2 py-1.5 text-center text-xs font-bold text-white vehicle-${v.color}-header`}>
                           <div>{v.name}</div>
                           {route && (
-                            <div
-                              className="text-[10px] font-normal opacity-90 cursor-pointer hover:underline no-print"
-                              onClick={() => {
-                                const t = prompt('事業所への到着時刻を入力してください（例 10:55）', route.arrivalTime);
-                                if (t && /^\d{1,2}:\d{2}$/.test(t.trim())) {
-                                  updateRoute({ ...route, arrivalTime: t.trim().padStart(5, '0') });
-                                  setPickupTimes({});
-                                }
-                              }}
-                            >
+                            <div className="text-[10px] font-normal opacity-90 no-print">
                               到着 {route.arrivalTime}
                             </div>
                           )}
