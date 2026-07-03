@@ -77,19 +77,12 @@ export function WeeklySchedule() {
       if (!route) continue;
 
       for (const d of WEEK_DAYS) {
-        const allStops = routeStops
-          .filter(rs => rs.routeId === route.id)
-          .sort((a, b) => a.order - b.order);
-
-        const activeStops = allStops.filter(s =>
-          weeklyDayOverrides.some(
-            o => o.weekKey === weekKey && o.memberId === s.memberId &&
-                 o.vehicleId === v.id && o.dayLabel === d.label && o.type === 'add'
-          )
+        // その日のマス配置（row最大 = 一番下 = 最後に乗る人）
+        const ovs = weeklyDayOverrides.filter(
+          o => o.weekKey === weekKey && o.vehicleId === v.id && o.dayLabel === d.label && o.type === 'add'
         );
-
-        if (activeStops.length === 0) continue;
-        const bottom = activeStops[activeStops.length - 1];
+        if (ovs.length === 0) continue;
+        const bottom = ovs.reduce((a, b) => ((a.row ?? 0) > (b.row ?? 0) ? a : b));
         const timeKey = `${d.label}-${v.id}-${bottom.memberId}`;
 
         const loc = memberLocations.find(l =>
@@ -172,8 +165,7 @@ export function WeeklySchedule() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     weekKey,
-    routeStops.map(r => `${r.id}-${r.order}-${r.memberId}`).join(),
-    weeklyDayOverrides.map(o => `${o.id}-${o.type}`).join(),
+    weeklyDayOverrides.map(o => `${o.id}-${o.type}-${o.row ?? ''}`).join(),
     memberLocations.map(l => `${l.id}-${l.lat}-${l.lng}`).join(),
     routes.map(r => `${r.id}-${r.arrivalTime}`).join(),
   ]);
@@ -205,14 +197,31 @@ export function WeeklySchedule() {
     );
   };
 
+  // マス位置はオーバーライドのrowに記録（マスは完全に独立。他の配置に影響しない）
+  // rowを持たない古いデータは空いている行へ順に割り当てる
+  const getPlacements = (dayLabel: string, vehicleId: string): { memberId: string; row: number }[] => {
+    const ovs = weeklyDayOverrides.filter(
+      o => o.weekKey === weekKey && o.vehicleId === vehicleId && o.dayLabel === dayLabel && o.type === 'add'
+    );
+    const used = new Set(ovs.filter(o => o.row != null).map(o => o.row as number));
+    let next = 0;
+    return ovs.map(o => {
+      if (o.row != null) return { memberId: o.memberId, row: o.row };
+      while (used.has(next)) next++;
+      used.add(next);
+      return { memberId: o.memberId, row: next++ };
+    });
+  };
+
   const getDayVehicleData = (dateStr: string, dayLabel: string, vehicleId: string) => {
     const route = goRoutes.find(r => r.vehicleId === vehicleId);
-    if (!route) return { route: null, stops: [], presentCount: 0, bottomMemberId: null as string | null };
-    const allStops = getStops(route.id);
-    const stops = allStops.filter(s => isActiveOnDay(s.memberId, vehicleId, dayLabel));
-    const presentCount = stops.filter(s => !isAbsent(dateStr, s.memberId, route.id)).length;
-    const bottomMemberId = stops.length > 0 ? stops[stops.length - 1].memberId : null;
-    return { route, stops, presentCount, bottomMemberId };
+    if (!route) return { route: null, placed: [] as { memberId: string; row: number }[], presentCount: 0, bottomMemberId: null as string | null };
+    const placed = getPlacements(dayLabel, vehicleId);
+    const presentCount = placed.filter(p => !isAbsent(dateStr, p.memberId, route.id)).length;
+    const bottomMemberId = placed.length > 0
+      ? placed.reduce((a, b) => (a.row > b.row ? a : b)).memberId
+      : null;
+    return { route, placed, presentCount, bottomMemberId };
   };
 
   const maxRows = 7;
@@ -224,47 +233,26 @@ export function WeeklySchedule() {
     const route = goRoutes.find(r => r.vehicleId === vehicleId);
     if (!route) { setPicking(null); return; }
 
-    const targetOrder = rowIdx + 1;
-
+    // routeStopは他画面との互換のために維持（順番のずらしはしない。表示はoverride.rowで決まる）
     const existingStop = routeStops.find(rs => rs.routeId === route.id && rs.memberId === memberId);
     if (!existingStop) {
       // 他車両のrouteStopを削除（1人は1台のみ）
       routeStops
         .filter(rs => rs.memberId === memberId && rs.routeId !== route.id)
         .forEach(rs => deleteRouteStop(rs.id));
-      // 新規追加: targetOrder以上を1つ後ろにずらして挿入
-      routeStops
-        .filter(rs => rs.routeId === route.id && rs.order >= targetOrder)
-        .forEach(rs => updateRouteStop({ ...rs, order: rs.order + 1 }));
-      addRouteStop({ id: `rs-${Date.now()}`, routeId: route.id, memberId, locationId: '', order: targetOrder, scheduledTime: '00:00' });
-    } else if (existingStop.order !== targetOrder) {
-      // 既存stopの行を移動
-      const currentOrder = existingStop.order;
-      if (currentOrder > targetOrder) {
-        // 上に移動: target〜current-1 を1つ下げる
-        routeStops
-          .filter(rs => rs.routeId === route.id && rs.order >= targetOrder && rs.order < currentOrder)
-          .forEach(rs => updateRouteStop({ ...rs, order: rs.order + 1 }));
-      } else {
-        // 下に移動: current+1〜target を1つ上げる
-        routeStops
-          .filter(rs => rs.routeId === route.id && rs.order > currentOrder && rs.order <= targetOrder)
-          .forEach(rs => updateRouteStop({ ...rs, order: rs.order - 1 }));
-      }
-      updateRouteStop({ ...existingStop, order: targetOrder });
+      addRouteStop({ id: `rs-${Date.now()}`, routeId: route.id, memberId, locationId: '', order: rowIdx + 1, scheduledTime: '00:00' });
     }
 
     // 同じ日の他車両addオーバーライドを削除（1日1台制限）
     weeklyDayOverrides
       .filter(o => o.weekKey === weekKey && o.memberId === memberId && o.dayLabel === dayLabel && o.vehicleId !== vehicleId && o.type === 'add')
       .forEach(o => removeWeeklyDayOverride(o.id));
-    // この車両+曜日のaddオーバーライドを作成
+    // この車両+曜日のaddオーバーライドを作成（マス位置rowを記録）
     const existingAdd = weeklyDayOverrides.find(
       o => o.weekKey === weekKey && o.memberId === memberId && o.vehicleId === vehicleId && o.dayLabel === dayLabel && o.type === 'add'
     );
-    if (!existingAdd) {
-      addWeeklyDayOverride({ id: `wdo-${Date.now()}`, weekKey, memberId, vehicleId, dayLabel, type: 'add' });
-    }
+    if (existingAdd) removeWeeklyDayOverride(existingAdd.id);
+    addWeeklyDayOverride({ id: `wdo-${Date.now()}`, weekKey, memberId, vehicleId, dayLabel, type: 'add', row: rowIdx });
 
     setPicking(null);
   };
@@ -450,14 +438,14 @@ export function WeeklySchedule() {
                     <td className="border border-gray-300 bg-gray-50 px-1 py-1 text-center text-xs text-gray-400 w-14">{rowIdx + 1}</td>
                     {weekDates.flatMap(d =>
                       activeVehicles.map(v => {
-                        const { route, stops, bottomMemberId } = getDayVehicleData(d.dateStr, d.label, v.id);
-                        const stop = stops.find(s => s.order === rowIdx + 1);
-                        const member = stop ? getMember(stop.memberId) : null;
-                        const absent = stop && route ? isAbsent(d.dateStr, stop.memberId, route.id) : false;
+                        const { route, placed, bottomMemberId } = getDayVehicleData(d.dateStr, d.label, v.id);
+                        const p = placed.find(x => x.row === rowIdx);
+                        const member = p ? getMember(p.memberId) : null;
+                        const absent = p && route ? isAbsent(d.dateStr, p.memberId, route.id) : false;
                         const isToday = d.dateStr === today;
                         const showAdd = !member && !!route;
-                        const isBottom = !!stop && stop.memberId === bottomMemberId;
-                        const timeKey2 = isBottom ? `${d.label}-${v.id}-${stop!.memberId}` : '';
+                        const isBottom = !!p && p.memberId === bottomMemberId;
+                        const timeKey2 = isBottom ? `${d.label}-${v.id}-${p!.memberId}` : '';
                         const pickupTime = isBottom ? pickupTimes[timeKey2] : undefined;
                         const isLoadingTime = isBottom && loadingTimes.has(timeKey2);
                         const isNoCoord = isBottom && noCoordIds.has(timeKey2);

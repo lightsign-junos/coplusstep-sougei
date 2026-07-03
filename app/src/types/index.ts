@@ -125,4 +125,5 @@ export interface WeeklyDayOverride {
   vehicleId: string;
   dayLabel: string;   // '月'〜'土'
   type: 'add' | 'remove';
+  row?: number;       // 週次一覧のマス位置（0始まり）。マスは独立していて他の配置に影響されない
 }
