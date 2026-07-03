@@ -46,7 +46,7 @@ export function MemberMaster() {
 
   const filtered = members
     .filter(m => m.name.includes(search) || (m.nameKana ?? '').includes(search) || m.phone.includes(search))
-    .sort((a, b) => (a.nameKana ?? a.name).localeCompare(b.nameKana ?? b.name, 'ja'));
+    .sort((a, b) => (a.nameKana || a.name).localeCompare(b.nameKana || b.name, 'ja'));
 
   const getLocations = (memberId: string) =>
     memberLocations.filter(l => l.memberId === memberId);
