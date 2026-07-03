@@ -69,25 +69,69 @@ export function MemberMaster() {
     setShowMemberModal(true);
   };
 
-  const handleSaveMember = () => {
-    if (!mForm.name) return;
-    if (editingMember) {
-      updateMember({ ...editingMember, ...mForm });
-    } else {
-      const memberId = `m-${Date.now()}`;
-      addMember({ id: memberId, createdAt: new Date().toISOString(), ...mForm });
-      if (goLoc.name) {
-        if (sameLocation) {
-          addMemberLocation({ id: `l-${Date.now()}`, memberId, name: goLoc.name, address: goLoc.address, direction: 'both', notes: '', lat: goLoc.lat, lng: goLoc.lng });
-        } else {
-          addMemberLocation({ id: `l-${Date.now()}`, memberId, name: goLoc.name, address: goLoc.address, direction: 'go', notes: '', lat: goLoc.lat, lng: goLoc.lng });
-          if (returnLoc.name) {
-            addMemberLocation({ id: `l-${Date.now() + 1}`, memberId, name: returnLoc.name, address: returnLoc.address, direction: 'return', notes: '', lat: returnLoc.lat, lng: returnLoc.lng });
+  // 住所から座標を自動取得（地図ピンなしでもOK）
+  // 国土地理院APIは日本の番地（1-1-1形式）まで解決できる。失敗時はNominatimにフォールバック
+  const geocodeAddress = async (address: string): Promise<{ lat: number; lng: number } | null> => {
+    if (!address.trim()) return null;
+    try {
+      const res = await fetch(
+        `https://msearch.gsi.go.jp/address-search/AddressSearch?q=${encodeURIComponent(address)}`
+      );
+      const data: { geometry: { coordinates: [number, number] } }[] = await res.json();
+      if (data.length > 0) {
+        const [lng, lat] = data[0].geometry.coordinates;
+        return { lat, lng };
+      }
+    } catch { /* fallthrough */ }
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1&countrycodes=jp&accept-language=ja`,
+        { headers: { 'User-Agent': 'coplus-step-sougei/1.0' } }
+      );
+      const data: { lat: string; lon: string }[] = await res.json();
+      if (data.length === 0) return null;
+      return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+    } catch {
+      return null;
+    }
+  };
+
+  // 座標がなければ住所から補完して返す
+  const withCoords = async (loc: LocDraft): Promise<LocDraft> => {
+    if (loc.lat != null && loc.lng != null) return loc;
+    const geo = await geocodeAddress(loc.address);
+    return geo ? { ...loc, lat: geo.lat, lng: geo.lng } : loc;
+  };
+
+  const [saving, setSaving] = useState(false);
+
+  const handleSaveMember = async () => {
+    if (!mForm.name || saving) return;
+    setSaving(true);
+    try {
+      if (editingMember) {
+        updateMember({ ...editingMember, ...mForm });
+      } else {
+        const memberId = `m-${Date.now()}`;
+        addMember({ id: memberId, createdAt: new Date().toISOString(), ...mForm });
+        if (goLoc.name || goLoc.address) {
+          const g = await withCoords(goLoc);
+          const gName = g.name || g.address;
+          if (sameLocation) {
+            addMemberLocation({ id: `l-${Date.now()}`, memberId, name: gName, address: g.address, direction: 'both', notes: '', lat: g.lat, lng: g.lng });
+          } else {
+            addMemberLocation({ id: `l-${Date.now()}`, memberId, name: gName, address: g.address, direction: 'go', notes: '', lat: g.lat, lng: g.lng });
+            if (returnLoc.name || returnLoc.address) {
+              const r = await withCoords(returnLoc);
+              addMemberLocation({ id: `l-${Date.now() + 1}`, memberId, name: r.name || r.address, address: r.address, direction: 'return', notes: '', lat: r.lat, lng: r.lng });
+            }
           }
         }
       }
+      setShowMemberModal(false);
+    } finally {
+      setSaving(false);
     }
-    setShowMemberModal(false);
   };
 
   const openCreateLocation = (memberId: string, defaultDir?: Direction) => {
@@ -113,14 +157,25 @@ export function MemberMaster() {
     setMapPickerTarget(null);
   };
 
-  const handleSaveLocation = () => {
-    if (!lForm.name || !showLocationModal) return;
-    if (editingLocation) {
-      updateMemberLocation({ ...editingLocation, ...lForm });
-    } else {
-      addMemberLocation({ id: `l-${Date.now()}`, memberId: showLocationModal.memberId, ...lForm });
+  const handleSaveLocation = async () => {
+    if (!lForm.name || !showLocationModal || saving) return;
+    setSaving(true);
+    try {
+      // 座標がなければ住所から自動取得
+      let form = lForm;
+      if ((form.lat == null || form.lng == null) && form.address.trim()) {
+        const geo = await geocodeAddress(form.address);
+        if (geo) form = { ...form, lat: geo.lat, lng: geo.lng };
+      }
+      if (editingLocation) {
+        updateMemberLocation({ ...editingLocation, ...form });
+      } else {
+        addMemberLocation({ id: `l-${Date.now()}`, memberId: showLocationModal.memberId, ...form });
+      }
+      setShowLocationModal(null);
+    } finally {
+      setSaving(false);
     }
-    setShowLocationModal(null);
   };
 
   const toggleDay = (day: string) => {
@@ -389,7 +444,7 @@ export function MemberMaster() {
 
             <div className="flex gap-2 justify-end pt-2 border-t border-gray-100">
               <button onClick={() => setShowMemberModal(false)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg cursor-pointer">キャンセル</button>
-              <button onClick={handleSaveMember} disabled={!mForm.name} className="px-4 py-2 text-sm bg-pink-500 text-white rounded-lg hover:bg-pink-600 cursor-pointer disabled:opacity-50">保存</button>
+              <button onClick={handleSaveMember} disabled={!mForm.name || saving} className="px-4 py-2 text-sm bg-pink-500 text-white rounded-lg hover:bg-pink-600 cursor-pointer disabled:opacity-50">{saving ? '保存中...' : '保存'}</button>
             </div>
           </div>
         </Modal>
@@ -465,7 +520,7 @@ export function MemberMaster() {
             </div>
             <div className="flex gap-2 justify-end pt-2 border-t border-gray-100">
               <button onClick={() => setShowLocationModal(null)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg cursor-pointer">キャンセル</button>
-              <button onClick={handleSaveLocation} disabled={!lForm.name} className="px-4 py-2 text-sm bg-pink-500 text-white rounded-lg hover:bg-pink-600 cursor-pointer disabled:opacity-50">保存</button>
+              <button onClick={handleSaveLocation} disabled={!lForm.name || saving} className="px-4 py-2 text-sm bg-pink-500 text-white rounded-lg hover:bg-pink-600 cursor-pointer disabled:opacity-50">{saving ? '保存中...' : '保存'}</button>
             </div>
           </div>
         </Modal>
