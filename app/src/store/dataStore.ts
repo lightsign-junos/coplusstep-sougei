@@ -139,6 +139,28 @@ let _gasDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 // initFromGASの多重実行防止（StrictMode等で二重に走ると読込→保存の競合が起きる）
 let _gasLoading = false;
 
+// activeな車両すべてに「行き」の便を保証する（無い車両には自動作成 → 週次一覧で配置可能になる）
+function ensureGoRoutes(routes: Route[], vehicles: Vehicle[]): Route[] {
+  const missing = vehicles.filter(
+    v => v.active && !routes.some(r => r.direction === 'go' && r.vehicleId === v.id)
+  );
+  if (missing.length === 0) return routes;
+  return [
+    ...routes,
+    ...missing.map(v => ({
+      id: `r-${v.id}-go`,
+      name: `${v.name}号 行き`,
+      direction: 'go' as const,
+      vehicleId: v.id,
+      driverId: '',
+      attendantId: '',
+      arrivalTime: '10:55',
+      velEnabled: false,
+      notes: '',
+    })),
+  ];
+}
+
 function scheduleGASSave() {
   if (_gasDebounceTimer) clearTimeout(_gasDebounceTimer);
   useDataStore.setState({ syncStatus: 'saving' });
@@ -212,12 +234,17 @@ export const useDataStore = create<DataState>()(
               };
             });
             // マスタ系はGASが空を返しても手元の値を維持（誤消去からの防御）
+            const nextVehicles = data.vehicles?.length ? data.vehicles : get().vehicles;
+            const nextRoutes = ensureGoRoutes(
+              data.routes?.length ? data.routes : get().routes,
+              nextVehicles
+            );
             set({
               members: mergedMembers.length ? mergedMembers : get().members,
               memberLocations: data.memberLocations?.length ? data.memberLocations : get().memberLocations,
               staff: data.staff?.length ? data.staff : get().staff,
-              vehicles: data.vehicles?.length ? data.vehicles : get().vehicles,
-              routes: data.routes?.length ? data.routes : get().routes,
+              vehicles: nextVehicles,
+              routes: nextRoutes,
               routeStops: data.routeStops ?? [],
               dailyOverrides: data.dailyOverrides ?? [],
               allowedUsers: data.allowedUsers?.length ? data.allowedUsers : get().allowedUsers,
@@ -341,12 +368,17 @@ export const useDataStore = create<DataState>()(
               ? m.defaultDays
               : String(m.defaultDays ?? '').split(',').map(x => x.trim()).filter(Boolean),
           }));
-          // 行き便の到着時刻は10:55固定
-          const fixedRoutes = s.routes.map(r =>
-            r.direction === 'go' && r.arrivalTime !== '10:55' ? { ...r, arrivalTime: '10:55' } : r
+          // 行き便の到着時刻は10:55固定 + 便が無い車両には自動作成
+          const fixedRoutes = ensureGoRoutes(
+            s.routes.map(r =>
+              r.direction === 'go' && r.arrivalTime !== '10:55' ? { ...r, arrivalTime: '10:55' } : r
+            ),
+            s.vehicles
           );
           const membersChanged = fixedMembers.some((m, i) => m.defaultDays !== s.members[i].defaultDays);
-          const routesChanged = fixedRoutes.some((r, i) => r !== s.routes[i]);
+          const routesChanged =
+            fixedRoutes.length !== s.routes.length ||
+            fixedRoutes.some((r, i) => r !== s.routes[i]);
           if (membersChanged || routesChanged) {
             useDataStore.setState({
               ...(membersChanged ? { members: fixedMembers } : {}),
