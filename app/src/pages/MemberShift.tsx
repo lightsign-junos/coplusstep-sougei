@@ -1,21 +1,17 @@
 import { useState } from 'react';
-import { format } from 'date-fns';
-import { Users, Printer, X } from 'lucide-react';
+import {
+  format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
+  eachDayOfInterval, addMonths, subMonths, isSameMonth,
+} from 'date-fns';
+import { ja } from 'date-fns/locale';
+import { ChevronLeft, ChevronRight, Check, X } from 'lucide-react';
 import { useDataStore } from '../store/dataStore';
 import { getMemberSortKey } from '../lib/memberDisplay';
+import { Modal } from '../components/common/Modal';
 import type { Member } from '../types';
 
-const WEEK_DAYS = ['月', '火', '水', '木', '金', '土'];
-
-// 曜日ごとのアクセントカラー
-const DAY_STYLE: Record<string, { bar: string; avatar: string; count: string; ring: string; selBg: string; selText: string }> = {
-  月: { bar: 'bg-rose-500',    avatar: 'bg-rose-100 text-rose-600',       count: 'bg-rose-50 text-rose-600',       ring: 'ring-rose-300',    selBg: 'bg-rose-50 ring-1 ring-rose-300',       selText: 'text-rose-700' },
-  火: { bar: 'bg-orange-500',  avatar: 'bg-orange-100 text-orange-600',   count: 'bg-orange-50 text-orange-600',   ring: 'ring-orange-300',  selBg: 'bg-orange-50 ring-1 ring-orange-300',   selText: 'text-orange-700' },
-  水: { bar: 'bg-sky-500',     avatar: 'bg-sky-100 text-sky-600',         count: 'bg-sky-50 text-sky-600',         ring: 'ring-sky-300',     selBg: 'bg-sky-50 ring-1 ring-sky-300',         selText: 'text-sky-700' },
-  木: { bar: 'bg-emerald-500', avatar: 'bg-emerald-100 text-emerald-600', count: 'bg-emerald-50 text-emerald-600', ring: 'ring-emerald-300', selBg: 'bg-emerald-50 ring-1 ring-emerald-300', selText: 'text-emerald-700' },
-  金: { bar: 'bg-amber-500',   avatar: 'bg-amber-100 text-amber-700',     count: 'bg-amber-50 text-amber-700',     ring: 'ring-amber-300',   selBg: 'bg-amber-50 ring-1 ring-amber-400',     selText: 'text-amber-700' },
-  土: { bar: 'bg-violet-500',  avatar: 'bg-violet-100 text-violet-600',   count: 'bg-violet-50 text-violet-600',   ring: 'ring-violet-300',  selBg: 'bg-violet-50 ring-1 ring-violet-300',   selText: 'text-violet-700' },
-};
+// ISO曜日(1=月〜7=日) → 日本語ラベル
+const dayLabelOf = (d: Date) => ['月', '火', '水', '木', '金', '土', '日'][Number(format(d, 'i')) - 1];
 
 // defaultDaysが文字列("月,火")のまま残っている古いデータにも対応
 const daysOf = (m: Member): string[] =>
@@ -24,162 +20,174 @@ const daysOf = (m: Member): string[] =>
     : String(m.defaultDays ?? '').split(',').map(s => s.trim()).filter(Boolean);
 
 export function MemberShift() {
-  const { members } = useDataStore();
-  // クリックした利用者を全曜日で追跡ハイライト
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [hoverId, setHoverId] = useState<string | null>(null);
+  const { members, shiftAbsences, markShiftAbsent, markShiftPresent } = useDataStore();
+  const [monthBase, setMonthBase] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
 
   const sorted = [...members].sort((a, b) =>
     getMemberSortKey(a).localeCompare(getMemberSortKey(b), 'ja')
   );
 
-  // 利用日未入力の人は毎日表示する
-  const byDay = WEEK_DAYS.map(day => ({
-    day,
-    list: sorted.filter(m => {
+  // その日の利用予定者（利用日未入力の人は毎日扱い・日曜は休み）
+  const scheduledFor = (d: Date): Member[] => {
+    const label = dayLabelOf(d);
+    if (label === '日') return [];
+    return sorted.filter(m => {
       const days = daysOf(m);
-      return days.length === 0 || days.includes(day);
-    }),
-  }));
+      return days.length === 0 || days.includes(label);
+    });
+  };
 
-  const totalSlots = byDay.reduce((sum, d) => sum + d.list.length, 0);
-  const maxCount = Math.max(...byDay.map(d => d.list.length), 1);
-  // ISO曜日(1=月〜7=日)を日本語ラベルへ
-  const today = ['月', '火', '水', '木', '金', '土', '日'][Number(format(new Date(), 'i')) - 1];
+  const absentSetFor = (dateStr: string) =>
+    new Set(shiftAbsences.filter(a => a.date === dateStr).map(a => a.memberId));
 
-  const selected = selectedId ? members.find(m => m.id === selectedId) : null;
-  const selectedDays = selected ? WEEK_DAYS.filter(d => daysOf(selected).includes(d)) : [];
-  const activeId = selectedId ?? hoverId;
+  // カレンダーのマス（月曜始まり）
+  const monthStart = startOfMonth(monthBase);
+  const gridDays = eachDayOfInterval({
+    start: startOfWeek(monthStart, { weekStartsOn: 1 }),
+    end: endOfWeek(endOfMonth(monthBase), { weekStartsOn: 1 }),
+  });
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
 
-  const handleChipClick = (id: string) => setSelectedId(cur => (cur === id ? null : id));
+  // モーダル用
+  const selDateStr = selectedDate ? format(selectedDate, 'yyyy-MM-dd') : '';
+  const selScheduled = selectedDate ? scheduledFor(selectedDate) : [];
+  const selAbsent = absentSetFor(selDateStr);
 
   return (
     <div className="flex flex-col h-full">
       {/* ヘッダー */}
-      <div className="flex items-end justify-between mb-5 no-print">
+      <div className="flex items-end justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">利用者シフト</h1>
-          <p className="text-xs text-gray-400 mt-1">
-            利用者マスタの利用日をもとに自動作成 ・ 名前をクリックすると利用曜日をまとめて確認できます
-          </p>
+          <p className="text-xs text-gray-400 mt-1">日付をクリックすると出欠を管理できます（利用者マスタの利用日をもとに自動作成）</p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 text-xs text-gray-500 bg-white border border-gray-200 rounded-lg px-3 py-1.5">
-            <Users size={13} className="text-pink-500" />
-            登録 {members.length} 名 ・ 週延べ {totalSlots} 名
-          </div>
-          <button
-            onClick={() => window.print()}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-gray-800 text-white rounded-lg hover:bg-gray-700 cursor-pointer transition-colors"
-          >
-            <Printer size={13} /> 印刷
+          <button onClick={() => setMonthBase(m => subMonths(m, 1))} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
+            <ChevronLeft size={16} />
+          </button>
+          <span className="text-base font-bold text-gray-800 min-w-[110px] text-center">
+            {format(monthBase, 'yyyy年M月', { locale: ja })}
+          </span>
+          <button onClick={() => setMonthBase(m => addMonths(m, 1))} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
+            <ChevronRight size={16} />
+          </button>
+          <button onClick={() => setMonthBase(new Date())} className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
+            今月
           </button>
         </div>
       </div>
 
-      {/* 印刷用タイトル */}
-      <div className="hidden print-block mb-3">
-        <h2 className="text-lg font-bold text-center">コプラスステップ 昭和島教室　利用者シフト</h2>
-      </div>
-
-      {/* 曜日カラム */}
-      <div className="grid grid-cols-6 gap-3 items-start">
-        {byDay.map(({ day, list }) => {
-          const s = DAY_STYLE[day];
-          const isToday = day === today;
-          return (
-            <div
-              key={day}
-              className={`bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col ${
-                isToday ? `ring-2 ${s.ring}` : ''
-              }`}
-            >
-              <div className={`h-1 ${s.bar}`} />
-
-              {/* 曜日ヘッダー */}
-              <div className="px-3 pt-2.5 pb-2 border-b border-gray-50">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-base font-bold text-gray-800">{day}</span>
-                    {isToday && (
-                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full no-print ${s.count}`}>今日</span>
-                    )}
-                  </div>
-                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${s.count}`}>
-                    {list.length}名
-                  </span>
-                </div>
-                {/* 人数バランスバー（最多曜日を100%として相対表示） */}
-                <div className="mt-1.5 h-1 rounded-full bg-gray-100 overflow-hidden no-print">
-                  <div
-                    className={`h-full rounded-full ${s.bar} transition-all duration-300`}
-                    style={{ width: `${Math.round((list.length / maxCount) * 100)}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* 利用者リスト */}
-              <div className="p-2 space-y-1">
-                {list.length === 0 ? (
-                  <p className="text-center text-xs text-gray-300 py-6">利用なし</p>
-                ) : (
-                  list.map(m => {
-                    const isActive = activeId === m.id;
-                    const isDimmed = activeId !== null && !isActive;
-                    return (
-                      <button
-                        key={m.id}
-                        onClick={() => handleChipClick(m.id)}
-                        onMouseEnter={() => setHoverId(m.id)}
-                        onMouseLeave={() => setHoverId(null)}
-                        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left cursor-pointer transition-all duration-150 ${
-                          isActive ? s.selBg : 'hover:bg-gray-50'
-                        } ${isDimmed ? 'opacity-35' : ''}`}
-                      >
-                        <span
-                          className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0 ${s.avatar}`}
-                        >
-                          {m.name.charAt(0)}
-                        </span>
-                        <span className={`text-[13px] font-medium truncate ${isActive ? s.selText : 'text-gray-800'}`}>
-                          {m.name}
-                        </span>
-                      </button>
-                    );
-                  })
-                )}
-              </div>
+      {/* カレンダー */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="grid grid-cols-7 border-b border-gray-100">
+          {['月', '火', '水', '木', '金', '土', '日'].map(d => (
+            <div key={d} className={`py-2 text-center text-xs font-bold ${d === '土' ? 'text-blue-500' : d === '日' ? 'text-red-400' : 'text-gray-500'}`}>
+              {d}
             </div>
-          );
-        })}
-      </div>
-
-      {/* 選択中の利用者サマリー */}
-      {selected && (
-        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 no-print">
-          <div className="flex items-center gap-3 bg-gray-900 text-white rounded-full pl-4 pr-2 py-2 shadow-xl">
-            <span className="text-sm font-bold">{selected.name} さん</span>
-            <span className="flex items-center gap-1">
-              {WEEK_DAYS.map(d => (
+          ))}
+        </div>
+        <div className="grid grid-cols-7">
+          {gridDays.map(d => {
+            const dateStr = format(d, 'yyyy-MM-dd');
+            const inMonth = isSameMonth(d, monthBase);
+            const isToday = dateStr === todayStr;
+            const isSunday = dayLabelOf(d) === '日';
+            const scheduled = scheduledFor(d);
+            const absent = scheduled.filter(m => absentSetFor(dateStr).has(m.id)).length;
+            const present = scheduled.length - absent;
+            const clickable = inMonth && !isSunday && scheduled.length > 0;
+            return (
+              <button
+                key={dateStr}
+                onClick={clickable ? () => setSelectedDate(d) : undefined}
+                className={`h-[88px] border-b border-r border-gray-100 p-1.5 flex flex-col items-start text-left transition-colors ${
+                  !inMonth ? 'bg-gray-50/60' : isSunday ? 'bg-gray-50/40' : 'bg-white'
+                } ${clickable ? 'cursor-pointer hover:bg-pink-50/50' : 'cursor-default'}`}
+              >
                 <span
-                  key={d}
-                  className={`w-6 h-6 rounded-full text-[11px] font-bold flex items-center justify-center ${
-                    selectedDays.includes(d) ? 'bg-white text-gray-900' : 'bg-white/15 text-white/40'
+                  className={`text-xs font-semibold w-6 h-6 flex items-center justify-center rounded-full ${
+                    isToday ? 'bg-pink-500 text-white' : !inMonth ? 'text-gray-300' : isSunday ? 'text-red-300' : 'text-gray-600'
                   }`}
                 >
-                  {d}
+                  {format(d, 'd')}
                 </span>
-              ))}
-            </span>
-            <span className="text-xs text-white/70">週{selectedDays.length}日</span>
-            <button
-              onClick={() => setSelectedId(null)}
-              className="w-7 h-7 rounded-full hover:bg-white/15 flex items-center justify-center cursor-pointer transition-colors"
-            >
-              <X size={14} />
-            </button>
-          </div>
+                {inMonth && !isSunday && scheduled.length > 0 && (
+                  <div className="mt-1 space-y-0.5 w-full">
+                    <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />
+                      出勤 {present} 名
+                    </div>
+                    <div className={`flex items-center gap-1 text-[11px] font-semibold ${absent > 0 ? 'text-red-500' : 'text-gray-300'}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${absent > 0 ? 'bg-red-400' : 'bg-gray-200'}`} />
+                      欠勤 {absent} 名
+                    </div>
+                  </div>
+                )}
+                {inMonth && isSunday && (
+                  <span className="mt-1 text-[10px] text-gray-300">休業</span>
+                )}
+              </button>
+            );
+          })}
         </div>
+      </div>
+
+      {/* 出欠管理モーダル */}
+      {selectedDate && (
+        <Modal
+          title={`${format(selectedDate, 'M月d日（EEEEE）', { locale: ja })}の出欠`}
+          onClose={() => setSelectedDate(null)}
+          size="sm"
+        >
+          <div className="space-y-1.5 max-h-[60vh] overflow-y-auto pr-1">
+            <div className="flex items-center justify-between px-1 pb-2 text-xs text-gray-400">
+              <span>利用予定 {selScheduled.length} 名</span>
+              <span>
+                <span className="text-emerald-600 font-semibold">出勤 {selScheduled.length - selAbsent.size}</span>
+                <span className="mx-1">/</span>
+                <span className={selAbsent.size > 0 ? 'text-red-500 font-semibold' : ''}>欠勤 {selAbsent.size}</span>
+              </span>
+            </div>
+            {selScheduled.map(m => {
+              const isAbsent = selAbsent.has(m.id);
+              return (
+                <div
+                  key={m.id}
+                  className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border transition-colors ${
+                    isAbsent ? 'border-red-100 bg-red-50/50' : 'border-gray-100 bg-white'
+                  }`}
+                >
+                  <span className={`text-sm font-medium truncate ${isAbsent ? 'text-red-400 line-through' : 'text-gray-800'}`}>
+                    {m.name}
+                  </span>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      onClick={() => markShiftPresent(selDateStr, m.id)}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
+                        !isAbsent
+                          ? 'bg-emerald-500 text-white'
+                          : 'bg-gray-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'
+                      }`}
+                    >
+                      <Check size={12} /> 出勤
+                    </button>
+                    <button
+                      onClick={() => markShiftAbsent(selDateStr, m.id)}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
+                        isAbsent
+                          ? 'bg-red-500 text-white'
+                          : 'bg-gray-100 text-gray-400 hover:bg-red-50 hover:text-red-500'
+                      }`}
+                    >
+                      <X size={12} /> 欠勤
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Modal>
       )}
     </div>
   );

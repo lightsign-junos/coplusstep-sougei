@@ -75,6 +75,8 @@ interface DataState {
   dailyOverrides: DailyOverride[];
   // Weekly day overrides (defaultDaysを変えずに週単位で追加・除外)
   weeklyDayOverrides: WeeklyDayOverride[];
+  // 利用者シフト（カレンダー）の欠勤マーク。date="yyyy-MM-dd"。記録がない人は出勤扱い
+  shiftAbsences: { date: string; memberId: string }[];
   // Vel weekly toggle
   velWeeks: Record<string, boolean>; // weekStart -> enabled
   // GAS sync
@@ -126,6 +128,10 @@ interface DataState {
   addWeeklyDayOverride: (override: WeeklyDayOverride) => void;
   removeWeeklyDayOverride: (id: string) => void;
   clearWeekOverrides: (weekKey: string) => void;
+
+  // 利用者シフトの出欠
+  markShiftAbsent: (date: string, memberId: string) => void;
+  markShiftPresent: (date: string, memberId: string) => void;
 
   // Vel toggle
   setVelEnabled: (weekStart: string, enabled: boolean) => void;
@@ -200,6 +206,7 @@ export const useDataStore = create<DataState>()(
       routeStops: seedRouteStops,
       dailyOverrides: [],
       weeklyDayOverrides: [],
+      shiftAbsences: [],
       velWeeks: {},
       gasLoaded: false,
       syncStatus: 'idle' as const,
@@ -317,6 +324,14 @@ export const useDataStore = create<DataState>()(
       removeDailyOverride: (id) => set(s => ({ dailyOverrides: s.dailyOverrides.filter(x => x.id !== id) })),
 
       addWeeklyDayOverride: (o) => set(s => ({ weeklyDayOverrides: [...s.weeklyDayOverrides, o] })),
+      markShiftAbsent: (date, memberId) => set(s => ({
+        shiftAbsences: s.shiftAbsences.some(a => a.date === date && a.memberId === memberId)
+          ? s.shiftAbsences
+          : [...s.shiftAbsences, { date, memberId }],
+      })),
+      markShiftPresent: (date, memberId) => set(s => ({
+        shiftAbsences: s.shiftAbsences.filter(a => !(a.date === date && a.memberId === memberId)),
+      })),
       removeWeeklyDayOverride: (id) => set(s => ({ weeklyDayOverrides: s.weeklyDayOverrides.filter(x => x.id !== id) })),
       clearWeekOverrides: (weekKey) => set(s => ({ weeklyDayOverrides: s.weeklyDayOverrides.filter(x => x.weekKey !== weekKey) })),
 
