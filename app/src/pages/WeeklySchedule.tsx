@@ -62,6 +62,27 @@ export function WeeklySchedule() {
   };
 
   const handleCopyWeek = () => {
+    const prevWeekKey = format(subWeeks(weekStart, 1), 'yyyy-MM-dd');
+    const prevOvs = weeklyDayOverrides.filter(o => o.weekKey === prevWeekKey && o.type === 'add');
+    if (prevOvs.length === 0) {
+      alert('前週に配置がないためコピーできません');
+      return;
+    }
+    const hasCurrent = weeklyDayOverrides.some(o => o.weekKey === weekKey && o.type === 'add');
+    if (hasCurrent && !confirm('今週の配置を前週の内容で置き換えますか？\n（今週の現在の配置は消えます）')) return;
+    // 今週分をクリアして前週の配置を複製
+    clearWeekOverrides(weekKey);
+    prevOvs.forEach((o, i) => {
+      addWeeklyDayOverride({
+        id: `wdo-${Date.now()}-${i}`,
+        weekKey,
+        memberId: o.memberId,
+        vehicleId: o.vehicleId,
+        dayLabel: o.dayLabel,
+        type: 'add',
+        row: o.row,
+      });
+    });
     setCopyToast(true);
     setTimeout(() => setCopyToast(false), 2500);
   };
