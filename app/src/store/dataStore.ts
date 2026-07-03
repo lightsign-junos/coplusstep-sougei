@@ -136,6 +136,8 @@ interface DataState {
 }
 
 let _gasDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+// initFromGASの多重実行防止（StrictMode等で二重に走ると読込→保存の競合が起きる）
+let _gasLoading = false;
 
 function scheduleGASSave() {
   if (_gasDebounceTimer) clearTimeout(_gasDebounceTimer);
@@ -181,53 +183,59 @@ export const useDataStore = create<DataState>()(
       syncStatus: 'idle' as const,
 
       initFromGAS: async () => {
-        if (get().gasLoaded) return;
-        const data = await gasGetAll();
-        if (!data) {
-          // GAS unavailable: seed GAS with current store data
-          const s = get();
-          await gasSaveAll({
-            members: s.members, memberLocations: s.memberLocations,
-            staff: s.staff, vehicles: s.vehicles, routes: s.routes,
-            routeStops: s.routeStops, dailyOverrides: s.dailyOverrides,
-            allowedUsers: s.allowedUsers,
-          });
-          set({ gasLoaded: true });
-          return;
-        }
-        const hasData = (data.members?.length ?? 0) > 0 || (data.routes?.length ?? 0) > 0;
-        if (hasData) {
-          // シートに列がない項目（nameKana等）はローカル保存値を引き継ぐ（GASロードで消さない）
-          const localMembers = get().members;
-          const mergedMembers = (data.members ?? []).map(gm => {
-            const local = localMembers.find(lm => lm.id === gm.id);
-            return {
-              ...gm,
-              nameKana: gm.nameKana || local?.nameKana || '',
-            };
-          });
-          // マスタ系はGASが空を返しても手元の値を維持（誤消去からの防御）
-          set({
-            members: mergedMembers.length ? mergedMembers : get().members,
-            memberLocations: data.memberLocations?.length ? data.memberLocations : get().memberLocations,
-            staff: data.staff?.length ? data.staff : get().staff,
-            vehicles: data.vehicles?.length ? data.vehicles : get().vehicles,
-            routes: data.routes?.length ? data.routes : get().routes,
-            routeStops: data.routeStops ?? [],
-            dailyOverrides: data.dailyOverrides ?? [],
-            allowedUsers: data.allowedUsers?.length ? data.allowedUsers : get().allowedUsers,
-            gasLoaded: true,
-          });
-        } else {
-          // GAS is empty: push current store data to GAS
-          const s = get();
-          await gasSaveAll({
-            members: s.members, memberLocations: s.memberLocations,
-            staff: s.staff, vehicles: s.vehicles, routes: s.routes,
-            routeStops: s.routeStops, dailyOverrides: s.dailyOverrides,
-            allowedUsers: s.allowedUsers,
-          });
-          set({ gasLoaded: true });
+        if (get().gasLoaded || _gasLoading) return;
+        _gasLoading = true;
+        try {
+          const data = await gasGetAll();
+          if (get().gasLoaded) return; // 二重実行の後着側は何もしない
+          if (!data) {
+            // GAS unavailable: seed GAS with current store data
+            const s = get();
+            await gasSaveAll({
+              members: s.members, memberLocations: s.memberLocations,
+              staff: s.staff, vehicles: s.vehicles, routes: s.routes,
+              routeStops: s.routeStops, dailyOverrides: s.dailyOverrides,
+              allowedUsers: s.allowedUsers,
+            });
+            set({ gasLoaded: true });
+            return;
+          }
+          const hasData = (data.members?.length ?? 0) > 0 || (data.routes?.length ?? 0) > 0;
+          if (hasData) {
+            // シートに列がない項目（nameKana等）はローカル保存値を引き継ぐ（GASロードで消さない）
+            const localMembers = get().members;
+            const mergedMembers = (data.members ?? []).map(gm => {
+              const local = localMembers.find(lm => lm.id === gm.id);
+              return {
+                ...gm,
+                nameKana: gm.nameKana || local?.nameKana || '',
+              };
+            });
+            // マスタ系はGASが空を返しても手元の値を維持（誤消去からの防御）
+            set({
+              members: mergedMembers.length ? mergedMembers : get().members,
+              memberLocations: data.memberLocations?.length ? data.memberLocations : get().memberLocations,
+              staff: data.staff?.length ? data.staff : get().staff,
+              vehicles: data.vehicles?.length ? data.vehicles : get().vehicles,
+              routes: data.routes?.length ? data.routes : get().routes,
+              routeStops: data.routeStops ?? [],
+              dailyOverrides: data.dailyOverrides ?? [],
+              allowedUsers: data.allowedUsers?.length ? data.allowedUsers : get().allowedUsers,
+              gasLoaded: true,
+            });
+          } else {
+            // GAS is empty: push current store data to GAS
+            const s = get();
+            await gasSaveAll({
+              members: s.members, memberLocations: s.memberLocations,
+              staff: s.staff, vehicles: s.vehicles, routes: s.routes,
+              routeStops: s.routeStops, dailyOverrides: s.dailyOverrides,
+              allowedUsers: s.allowedUsers,
+            });
+            set({ gasLoaded: true });
+          }
+        } finally {
+          _gasLoading = false;
         }
       },
 
@@ -354,6 +362,8 @@ export const useDataStore = create<DataState>()(
 // Auto-save to GAS on data changes (debounced 1.5s)
 useDataStore.subscribe((state, prev) => {
   if (!state.gasLoaded) return;
+  // GAS読み込み直後のデータ置き換えは「変更」ではないので保存しない
+  if (!prev.gasLoaded) return;
   const changed =
     state.members !== prev.members ||
     state.memberLocations !== prev.memberLocations ||

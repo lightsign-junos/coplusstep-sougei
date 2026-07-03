@@ -11,9 +11,7 @@ import { MemberMaster } from './pages/MemberMaster';
 import { StaffVehicleMaster } from './pages/StaffVehicleMaster';
 import { AdminPage } from './pages/AdminPage';
 import { useDataStore } from './store/dataStore';
-import { setupGasSync } from './lib/gasSync';
-
-setupGasSync();
+// GAS自動保存は dataStore 内の subscribe に一本化（二重保存防止）
 
 export default function App() {
   const initFromGAS = useDataStore(s => s.initFromGAS);
