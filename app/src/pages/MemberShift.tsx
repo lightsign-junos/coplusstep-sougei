@@ -51,12 +51,23 @@ export function MemberShift() {
   for (let i = 0; i < gridDays.length; i += 7) weeks.push(gridDays.slice(i, i + 7));
   const todayStr = format(new Date(), 'yyyy-MM-dd');
 
+  // 出勤/予定/稼働率の集計ヘルパー
+  const statsFor = (days: Date[]) => {
+    let scheduled = 0;
+    let absent = 0;
+    for (const d of days) {
+      if (!isSameMonth(d, monthBase) || dayLabelOf(d) === '日') continue;
+      const list = scheduledFor(d);
+      scheduled += list.length;
+      absent += list.filter(m => absentSetFor(format(d, 'yyyy-MM-dd')).has(m.id)).length;
+    }
+    const present = scheduled - absent;
+    const rate = scheduled > 0 ? Math.round((present / scheduled) * 100) : null;
+    return { scheduled, absent, present, rate };
+  };
+
   // 月間サマリー（当月の営業日のみ）
-  const monthDays = gridDays.filter(d => isSameMonth(d, monthBase) && dayLabelOf(d) !== '日');
-  const monthAbsences = monthDays.reduce(
-    (sum, d) => sum + scheduledFor(d).filter(m => absentSetFor(format(d, 'yyyy-MM-dd')).has(m.id)).length,
-    0
-  );
+  const monthStats = statsFor(gridDays);
 
   // モーダル用
   const selDateStr = selectedDate ? format(selectedDate, 'yyyy-MM-dd') : '';
@@ -69,9 +80,23 @@ export function MemberShift() {
       <div className="flex items-end justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">利用者シフト</h1>
-          <p className="text-xs text-gray-400 mt-1">
-            日付をクリックして出欠をつけます ・ 今月の欠勤 {monthAbsences} 件
-          </p>
+          <p className="text-xs text-gray-400 mt-1">日付をクリックして出欠をつけます</p>
+        </div>
+        {/* 月間稼働率サマリー */}
+        <div className="flex items-center gap-4 bg-white border border-gray-200 rounded-xl px-4 py-2">
+          <div className="text-center">
+            <p className="text-[10px] text-gray-400 leading-tight">月間稼働率</p>
+            <p className={`text-xl font-bold leading-tight tabular-nums ${
+              monthStats.rate !== null && monthStats.rate < 90 ? 'text-red-500' : 'text-emerald-600'
+            }`}>
+              {monthStats.rate !== null ? `${monthStats.rate}%` : '―'}
+            </p>
+          </div>
+          <div className="h-8 w-px bg-gray-100" />
+          <div className="text-xs text-gray-500 leading-relaxed">
+            <p>出勤 <span className="font-bold text-gray-800 tabular-nums">{monthStats.present}</span> ／ 予定 <span className="font-bold text-gray-800 tabular-nums">{monthStats.scheduled}</span></p>
+            <p>欠勤 <span className={`font-bold tabular-nums ${monthStats.absent > 0 ? 'text-red-500' : 'text-gray-800'}`}>{monthStats.absent}</span> 件</p>
+          </div>
         </div>
         <div className="flex items-center bg-white border border-gray-200 rounded-xl overflow-hidden">
           <button
@@ -103,7 +128,7 @@ export function MemberShift() {
         className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col"
         style={{ height: 'calc(100vh - 150px)' }}
       >
-        <div className="grid grid-cols-7 border-b border-gray-200">
+        <div className="grid grid-cols-[repeat(7,1fr)_96px] border-b border-gray-200">
           {['月', '火', '水', '木', '金', '土', '日'].map(d => (
             <div
               key={d}
@@ -114,10 +139,13 @@ export function MemberShift() {
               {d}
             </div>
           ))}
+          <div className="py-1.5 text-center text-[11px] font-bold tracking-widest text-gray-500 bg-gray-100/80 border-l border-gray-200">
+            週計
+          </div>
         </div>
         <div className="flex-1 grid" style={{ gridTemplateRows: `repeat(${weeks.length}, minmax(0, 1fr))` }}>
           {weeks.map((week, wi) => (
-            <div key={wi} className="grid grid-cols-7 border-b border-gray-100 last:border-b-0">
+            <div key={wi} className="grid grid-cols-[repeat(7,1fr)_96px] border-b border-gray-100 last:border-b-0">
               {week.map(d => {
                 const dateStr = format(d, 'yyyy-MM-dd');
                 const inMonth = isSameMonth(d, monthBase);
@@ -170,11 +198,45 @@ export function MemberShift() {
                           {present}
                         </span>
                         <span className="text-[10px] text-gray-400">名 出勤</span>
+                        {scheduled.length > 0 && (
+                          <span className={`ml-auto text-[11px] font-bold tabular-nums ${
+                            absent > 0 ? 'text-red-500' : 'text-gray-300'
+                          }`}>
+                            {Math.round((present / scheduled.length) * 100)}%
+                          </span>
+                        )}
                       </div>
                     )}
                   </button>
                 );
               })}
+              {/* 週計（当月の営業日のみ集計） */}
+              {(() => {
+                const ws = statsFor(week);
+                return (
+                  <div className="border-l border-gray-200 bg-gray-50/80 px-2 pt-1.5 pb-1 flex flex-col">
+                    {ws.scheduled > 0 ? (
+                      <>
+                        <span className={`text-lg font-bold tabular-nums leading-tight ${
+                          ws.rate !== null && ws.rate < 90 ? 'text-red-500' : 'text-gray-700'
+                        }`}>
+                          {ws.rate}%
+                        </span>
+                        <span className="mt-auto text-[10px] text-gray-400 tabular-nums leading-tight">
+                          {ws.present}/{ws.scheduled}名
+                        </span>
+                        {ws.absent > 0 && (
+                          <span className="text-[10px] text-red-500 font-semibold tabular-nums leading-tight">
+                            欠 {ws.absent}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-[10px] text-gray-300">―</span>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           ))}
         </div>
