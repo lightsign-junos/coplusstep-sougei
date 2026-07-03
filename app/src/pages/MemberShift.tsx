@@ -33,9 +33,13 @@ export function MemberShift() {
     getMemberSortKey(a).localeCompare(getMemberSortKey(b), 'ja')
   );
 
+  // 利用日未入力の人は毎日表示する
   const byDay = WEEK_DAYS.map(day => ({
     day,
-    list: sorted.filter(m => daysOf(m).includes(day)),
+    list: sorted.filter(m => {
+      const days = daysOf(m);
+      return days.length === 0 || days.includes(day);
+    }),
   }));
 
   const totalSlots = byDay.reduce((sum, d) => sum + d.list.length, 0);

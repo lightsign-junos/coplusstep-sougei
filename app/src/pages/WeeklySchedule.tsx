@@ -312,8 +312,11 @@ export function WeeklySchedule() {
         .filter(o => o.weekKey === weekKey && o.dayLabel === dayLabel && o.type === 'add')
         .map(o => o.memberId)
     );
-    // その曜日に利用日登録がある人だけを表示
-    return members.filter(m => memberDays(m).includes(dayLabel) && !placedIds.has(m.id));
+    // その曜日に利用日登録がある人を表示（利用日未入力の人は毎日表示）
+    return members.filter(m => {
+      const days = memberDays(m);
+      return (days.length === 0 || days.includes(dayLabel)) && !placedIds.has(m.id);
+    });
   };
 
   const pickingVehicle = picking ? activeVehicles.find(v => v.id === picking.vehicleId) : null;
