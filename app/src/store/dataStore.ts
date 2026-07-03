@@ -306,26 +306,36 @@ export const useDataStore = create<DataState>()(
     }),
     {
       name: 'coplus-step-data',
+      // gasLoaded / syncStatus は保存しない（毎回GASから最新データを読み込む）
+      partialize: (state) => {
+        const { gasLoaded: _g, syncStatus: _s, ...rest } = state as unknown as Record<string, unknown>;
+        return rest;
+      },
       onRehydrateStorage: () => (state) => {
-        // 過去にGAS経由で defaultDays が "月,火" のような文字列になったデータを配列に修復
         if (!state) return;
-        const fixed = state.members.map(m => ({
-          ...m,
-          defaultDays: Array.isArray(m.defaultDays)
-            ? m.defaultDays
-            : String(m.defaultDays ?? '').split(',').map(s => s.trim()).filter(Boolean),
-        }));
-        if (fixed.some((m, i) => m.defaultDays !== state.members[i].defaultDays)) {
-          useDataStore.setState({ members: fixed });
-        }
-        // 行き便の到着時刻は10:55固定
-        if (state.routes.some(r => r.direction === 'go' && r.arrivalTime !== '10:55')) {
-          useDataStore.setState({
-            routes: state.routes.map(r =>
-              r.direction === 'go' ? { ...r, arrivalTime: '10:55' } : r
-            ),
-          });
-        }
+        // ストア初期化完了後に修復を実行（初期化中のsetStateを避ける）
+        setTimeout(() => {
+          const s = useDataStore.getState();
+          // 過去にGAS経由で defaultDays が "月,火" のような文字列になったデータを配列に修復
+          const fixedMembers = s.members.map(m => ({
+            ...m,
+            defaultDays: Array.isArray(m.defaultDays)
+              ? m.defaultDays
+              : String(m.defaultDays ?? '').split(',').map(x => x.trim()).filter(Boolean),
+          }));
+          // 行き便の到着時刻は10:55固定
+          const fixedRoutes = s.routes.map(r =>
+            r.direction === 'go' && r.arrivalTime !== '10:55' ? { ...r, arrivalTime: '10:55' } : r
+          );
+          const membersChanged = fixedMembers.some((m, i) => m.defaultDays !== s.members[i].defaultDays);
+          const routesChanged = fixedRoutes.some((r, i) => r !== s.routes[i]);
+          if (membersChanged || routesChanged) {
+            useDataStore.setState({
+              ...(membersChanged ? { members: fixedMembers } : {}),
+              ...(routesChanged ? { routes: fixedRoutes } : {}),
+            });
+          }
+        }, 0);
       },
     }
   )
