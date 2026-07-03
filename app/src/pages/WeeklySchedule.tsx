@@ -158,8 +158,13 @@ export function WeeklySchedule() {
               `https://api.openrouteservice.org/v2/directions/driving-car?api_key=${apiKey}&start=${leg.from.lng},${leg.from.lat}&end=${endLng},${endLat}`
             );
             if (!r.ok) throw new Error(`HTTP ${r.status}`);
-            const data: { features: { properties: { summary: { duration: number } } }[] } = await r.json();
-            mins = Math.ceil(data.features[0].properties.summary.duration / 60);
+            const data: { features: { properties: { summary: { duration: number; distance: number } } }[] } = await r.json();
+            const sum = data.features[0].properties.summary;
+            // ORSは信号・渋滞なしの楽観的な速度で計算するため、
+            // 都市部の実勢速度20km/hで走った場合の時間を下限にする
+            const orsMins = sum.duration / 60;
+            const realisticMins = (sum.distance / 1000) / 20 * 60;
+            mins = Math.ceil(Math.max(orsMins, realisticMins));
           } catch (e) {
             console.error('[ORS] API error (attempt', attempt + 1, '):', e, key);
             await new Promise(res => setTimeout(res, 1000 * (attempt + 1)));
