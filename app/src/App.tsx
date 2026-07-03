@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Layout } from './components/layout/Layout';
 import { LoginPage } from './pages/LoginPage';
 import { Dashboard } from './pages/Dashboard';
+import { MemberShift } from './pages/MemberShift';
 import { WeeklySchedule } from './pages/WeeklySchedule';
 import { MonthlySchedule } from './pages/MonthlySchedule';
 import { RouteMaster } from './pages/RouteMaster';
@@ -30,6 +31,8 @@ export default function App() {
           <Route path="/" element={<WeeklySchedule />} />
           {/* ダッシュボードは当日確認用サブページ */}
           <Route path="/dashboard" element={<Dashboard />} />
+          {/* 利用者シフト（利用日ベースの曜日別一覧） */}
+          <Route path="/shift" element={<MemberShift />} />
           {/* マスタ管理（補助機能） */}
           <Route path="/members" element={<MemberMaster />} />
           <Route path="/staff" element={<StaffVehicleMaster />} />

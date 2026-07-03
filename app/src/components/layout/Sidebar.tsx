@@ -1,13 +1,14 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Calendar, LayoutDashboard, Users,
-  UserCog, LogOut, ShieldCheck, Car
+  UserCog, LogOut, ShieldCheck, Car, CalendarDays
 } from 'lucide-react';
 import { useDataStore } from '../../store/dataStore';
 
 const NAV_ITEMS = [
   { to: '/', icon: Calendar, label: '送迎表作成', exact: true },
   { to: '/dashboard', icon: LayoutDashboard, label: '当日確認' },
+  { to: '/shift', icon: CalendarDays, label: '利用者シフト' },
 ];
 
 const MASTER_ITEMS = [
