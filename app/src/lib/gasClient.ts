@@ -63,10 +63,18 @@ export async function gasGetAll(): Promise<GASData | null> {
 
 export async function gasSaveAll(data: GASData): Promise<void> {
   try {
+    // シートのセルに配列を書くと先頭要素しか残らないため、カンマ区切り文字列で保存する
+    const payload = {
+      ...data,
+      members: data.members.map(m => ({
+        ...m,
+        defaultDays: Array.isArray(m.defaultDays) ? m.defaultDays.join(',') : m.defaultDays,
+      })),
+    };
     await fetch(`${GAS_URL}?action=saveAllData`, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
     });
   } catch {
     // silent fail — localStorage is the fallback
