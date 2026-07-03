@@ -485,18 +485,9 @@ export function WeeklySchedule() {
                                   <div className="font-medium text-gray-800 text-[15px] leading-tight">
                                     {displayName(member)}<span className="print-sama text-[11px] text-gray-500 ml-0.5">様</span>
                                   </div>
-                                  {pickupTime && pickupTime !== 'ERR' && (() => {
-                                    const [ph, pm] = pickupTime.split(':').map(Number);
-                                    const [ah, am] = (route?.arrivalTime ?? '10:55').split(':').map(Number);
-                                    const travelMin = (ah * 60 + am) - (ph * 60 + pm);
-                                    const isWeird = travelMin > 60 || travelMin < 0;
-                                    return (
-                                      <>
-                                        <div className={`text-[11px] font-mono font-semibold mt-0.5 ${isWeird ? 'text-red-500' : 'text-blue-600'}`}>{pickupTime}</div>
-                                        <div className={`text-[10px] mt-0 ${isWeird ? 'text-red-400' : 'text-gray-400'}`}>{travelMin}分</div>
-                                      </>
-                                    );
-                                  })()}
+                                  {pickupTime && pickupTime !== 'ERR' && (
+                                    <div className="text-[11px] font-mono font-semibold mt-0.5 text-blue-600">{pickupTime}</div>
+                                  )}
                                   {pickupTime === 'ERR' && (
                                     <div className="text-[10px] text-red-500 mt-0.5">API失敗</div>
                                   )}
