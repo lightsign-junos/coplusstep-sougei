@@ -53,14 +53,6 @@ export function WeeklySchedule() {
   const FACILITY_LAT = 35.5702778;
   const FACILITY_LNG = 139.7513047;
 
-  const calcPickupTime = (arrivalTime: string, travelMins: number): string => {
-    const [h, m] = arrivalTime.split(':').map(Number);
-    let total = ((h * 60 + m - travelMins) % 1440 + 1440) % 1440;
-    // 5分単位に切り下げ（例 10:41 → 10:40、10:38 → 10:35）
-    total = Math.floor(total / 5) * 5;
-    return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
-  };
-
   const handleCopyWeek = () => {
     const prevWeekKey = format(subWeeks(weekStart, 1), 'yyyy-MM-dd');
     const prevOvs = weeklyDayOverrides.filter(o => o.weekKey === prevWeekKey && o.type === 'add');
@@ -87,104 +79,126 @@ export function WeeklySchedule() {
     setTimeout(() => setCopyToast(false), 2500);
   };
 
-  // ── 乗車時間の自動計算（ORS） ────────────────────────────────
+  // ── 乗車時間の自動計算（ORS・下から連鎖） ─────────────────────
+  // 一番下の人: 到着時刻 −（その人の場所→事業所）
+  // その上の人: 下の人の乗車時間 −（上の人の場所→下の人の場所）… を上へ連鎖
   useEffect(() => {
-    const newTimes: Record<string, string> = {};
-    const newLoading = new Set<string>();
+    type Point = { lat: number; lng: number };
+    type ChainStop = { memberId: string; timeKey: string; loc: Point | null };
+    const chains: { arrival: string; stops: ChainStop[] }[] = [];
     const newNoCoord = new Set<string>();
-    // 同一座標への重複リクエストをまとめる: cacheKey → { lat, lng, targets }
-    const pending = new Map<string, { lat: number; lng: number; targets: { timeKey: string; arrival: string }[] }>();
+    const newLoading = new Set<string>();
 
     for (const v of activeVehicles) {
       const route = goRoutes.find(r => r.vehicleId === v.id);
       if (!route) continue;
-
       for (const d of WEEK_DAYS) {
-        // その日のマス配置（row最大 = 一番下 = 最後に乗る人）
-        const ovs = weeklyDayOverrides.filter(
-          o => o.weekKey === weekKey && o.vehicleId === v.id && o.dayLabel === d.label && o.type === 'add'
-        );
+        const ovs = weeklyDayOverrides
+          .filter(o => o.weekKey === weekKey && o.vehicleId === v.id && o.dayLabel === d.label && o.type === 'add')
+          .sort((a, b) => (a.row ?? 0) - (b.row ?? 0));
         if (ovs.length === 0) continue;
-        const bottom = ovs.reduce((a, b) => ((a.row ?? 0) > (b.row ?? 0) ? a : b));
-        const timeKey = `${d.label}-${v.id}-${bottom.memberId}`;
-
-        const loc = memberLocations.find(l =>
-          l.memberId === bottom.memberId &&
-          (l.direction === 'go' || l.direction === 'both') &&
-          l.lat != null && l.lng != null
-        );
-        if (!loc || loc.lat == null || loc.lng == null) {
-          newNoCoord.add(timeKey);
-          continue;
-        }
-
-        const cacheKey = `${loc.lat.toFixed(5)},${loc.lng.toFixed(5)}`;
-        if (travelCache[cacheKey] !== undefined) {
-          newTimes[timeKey] = calcPickupTime(route.arrivalTime, travelCache[cacheKey]);
-          continue;
-        }
-
-        newLoading.add(timeKey);
-        const entry = pending.get(cacheKey) ?? { lat: loc.lat, lng: loc.lng, targets: [] };
-        entry.targets.push({ timeKey, arrival: route.arrivalTime });
-        pending.set(cacheKey, entry);
+        const stops: ChainStop[] = ovs.map(o => {
+          const loc = memberLocations.find(l =>
+            l.memberId === o.memberId &&
+            (l.direction === 'go' || l.direction === 'both') &&
+            l.lat != null && l.lng != null
+          );
+          const timeKey = `${d.label}-${v.id}-${o.memberId}`;
+          if (!loc || loc.lat == null || loc.lng == null) {
+            newNoCoord.add(timeKey);
+            return { memberId: o.memberId, timeKey, loc: null };
+          }
+          newLoading.add(timeKey);
+          return { memberId: o.memberId, timeKey, loc: { lat: loc.lat, lng: loc.lng } };
+        });
+        chains.push({ arrival: route.arrivalTime, stops });
       }
     }
 
-    if (Object.keys(newTimes).length > 0) {
-      setPickupTimes(pt => ({ ...pt, ...newTimes }));
-    }
+    setNoCoordIds(newNoCoord);
     setLoadingTimes(prev => {
       const merged = new Set(prev);
       newLoading.forEach(k => merged.add(k));
       return merged;
     });
-    setNoCoordIds(newNoCoord);
+    if (chains.length === 0) return;
 
-    // 座標ごとに直列でリクエスト（レート制限対策）＋失敗時は自動リトライ
-    if (pending.size > 0) {
-      const apiKey = import.meta.env.VITE_ORS_API_KEY as string;
-      (async () => {
-        for (const [cacheKey, p] of pending) {
-          let mins: number | null = null;
-          for (let attempt = 0; attempt < 3 && mins === null; attempt++) {
-            try {
-              const r = await fetch(
-                `https://api.openrouteservice.org/v2/directions/driving-car?api_key=${apiKey}&start=${p.lng},${p.lat}&end=${FACILITY_LNG},${FACILITY_LAT}`
-              );
-              if (!r.ok) throw new Error(`HTTP ${r.status}`);
-              const data: { features: { properties: { summary: { duration: number } } }[] } = await r.json();
-              mins = Math.ceil(data.features[0].properties.summary.duration / 60);
-            } catch (e) {
-              console.error('[ORS] API error (attempt', attempt + 1, '):', e, cacheKey);
-              await new Promise(res => setTimeout(res, 1000 * (attempt + 1)));
-            }
-          }
-          if (mins !== null) {
-            const m = mins;
-            setTravelCache(c => ({ ...c, [cacheKey]: m }));
-            setPickupTimes(pt => {
-              const n = { ...pt };
-              p.targets.forEach(t => { n[t.timeKey] = calcPickupTime(t.arrival, m); });
-              return n;
-            });
-          } else {
-            setPickupTimes(pt => {
-              const n = { ...pt };
-              p.targets.forEach(t => { n[t.timeKey] = 'ERR'; });
-              return n;
-            });
-          }
-          setLoadingTimes(s => {
-            const n = new Set(s);
-            p.targets.forEach(t => n.delete(t.timeKey));
-            return n;
-          });
-          // 連続リクエストの間隔を空ける
-          await new Promise(res => setTimeout(res, 300));
-        }
-      })();
+    // 必要な区間（出発地→目的地）を重複なく集める。目的地nullは事業所
+    const legKey = (from: Point, to: Point | null) =>
+      to
+        ? `${from.lat.toFixed(5)},${from.lng.toFixed(5)}->${to.lat.toFixed(5)},${to.lng.toFixed(5)}`
+        : `${from.lat.toFixed(5)},${from.lng.toFixed(5)}->FAC`;
+    const needed = new Map<string, { from: Point; to: Point | null }>();
+    for (const chain of chains) {
+      const s = chain.stops;
+      for (let i = 0; i < s.length; i++) {
+        const from = s[i].loc;
+        if (!from) continue;
+        // 下の人（次の有効な行き先）: 最後尾は事業所
+        const isLast = i === s.length - 1;
+        const to = isLast ? null : s[i + 1].loc;
+        if (!isLast && !to) continue; // 下の人が座標なし → この区間は計算不能
+        const key = legKey(from, to);
+        if (travelCache[key] === undefined && !needed.has(key)) needed.set(key, { from, to });
+      }
     }
+
+    const apiKey = import.meta.env.VITE_ORS_API_KEY as string;
+
+    (async () => {
+      // 不足区間を直列で取得（レート制限対策・自動リトライ）
+      const durations: Record<string, number> = { ...travelCache };
+      for (const [key, leg] of needed) {
+        let mins: number | null = null;
+        const endLng = leg.to ? leg.to.lng : FACILITY_LNG;
+        const endLat = leg.to ? leg.to.lat : FACILITY_LAT;
+        for (let attempt = 0; attempt < 3 && mins === null; attempt++) {
+          try {
+            const r = await fetch(
+              `https://api.openrouteservice.org/v2/directions/driving-car?api_key=${apiKey}&start=${leg.from.lng},${leg.from.lat}&end=${endLng},${endLat}`
+            );
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            const data: { features: { properties: { summary: { duration: number } } }[] } = await r.json();
+            mins = Math.ceil(data.features[0].properties.summary.duration / 60);
+          } catch (e) {
+            console.error('[ORS] API error (attempt', attempt + 1, '):', e, key);
+            await new Promise(res => setTimeout(res, 1000 * (attempt + 1)));
+          }
+        }
+        if (mins !== null) durations[key] = mins;
+        await new Promise(res => setTimeout(res, 250));
+      }
+      setTravelCache(c => ({ ...c, ...durations }));
+
+      // 下から上へ連鎖計算（各段で5分切り下げ）
+      const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+      const toStr = (min: number) => {
+        const m = ((min % 1440) + 1440) % 1440;
+        return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+      };
+      const newTimes: Record<string, string> = {};
+      for (const chain of chains) {
+        const s = chain.stops;
+        let below = toMin(chain.arrival); // 直下の基準時刻（最後尾は到着時刻）
+        for (let i = s.length - 1; i >= 0; i--) {
+          const from = s[i].loc;
+          if (!from) break; // 座標なし → その人と上は計算不能
+          const isLast = i === s.length - 1;
+          const to = isLast ? null : s[i + 1].loc;
+          if (!isLast && !to) break;
+          const dur = durations[legKey(from, to)];
+          if (dur === undefined) { newTimes[s[i].timeKey] = 'ERR'; break; }
+          below = Math.floor((below - dur) / 5) * 5;
+          newTimes[s[i].timeKey] = toStr(below);
+        }
+      }
+      setPickupTimes(pt => ({ ...pt, ...newTimes }));
+      setLoadingTimes(prev => {
+        const n = new Set(prev);
+        newLoading.forEach(k => n.delete(k));
+        return n;
+      });
+    })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     weekKey,
@@ -455,17 +469,17 @@ export function WeeklySchedule() {
                     <td className="border border-gray-300 bg-gray-50 px-1 py-1 text-center text-xs text-gray-400 w-14">{rowIdx + 1}</td>
                     {weekDates.flatMap(d =>
                       activeVehicles.map(v => {
-                        const { route, placed, bottomMemberId } = getDayVehicleData(d.dateStr, d.label, v.id);
+                        const { route, placed } = getDayVehicleData(d.dateStr, d.label, v.id);
                         const p = placed.find(x => x.row === rowIdx);
                         const member = p ? getMember(p.memberId) : null;
                         const absent = p && route ? isAbsent(d.dateStr, p.memberId, route.id) : false;
                         const isToday = d.dateStr === today;
                         const showAdd = !member && !!route;
-                        const isBottom = !!p && p.memberId === bottomMemberId;
-                        const timeKey2 = isBottom ? `${d.label}-${v.id}-${p!.memberId}` : '';
-                        const pickupTime = isBottom ? pickupTimes[timeKey2] : undefined;
-                        const isLoadingTime = isBottom && loadingTimes.has(timeKey2);
-                        const isNoCoord = isBottom && noCoordIds.has(timeKey2);
+                        // 全員に乗車時間を表示（下から連鎖計算）
+                        const timeKey2 = p ? `${d.label}-${v.id}-${p.memberId}` : '';
+                        const pickupTime = p ? pickupTimes[timeKey2] : undefined;
+                        const isLoadingTime = !!p && loadingTimes.has(timeKey2);
+                        const isNoCoord = !!p && noCoordIds.has(timeKey2);
                         return (
                           <td
                             key={`cell-${d.label}-${v.id}-${rowIdx}`}
@@ -481,9 +495,9 @@ export function WeeklySchedule() {
                                   <div className="text-[10px] font-bold">欠席</div>
                                 </div>
                               ) : (
-                                <div className="cell-line group relative">
-                                  <div className="font-medium text-gray-800 text-[15px] leading-tight">
-                                    {displayName(member)}<span className="print-sama text-[11px] text-gray-500 ml-0.5">様</span>
+                                <div className="cell-line group relative w-full">
+                                  <div className="font-medium text-gray-800 text-[14px] leading-tight whitespace-nowrap truncate text-center">
+                                    {displayName(member)}<span className="print-sama text-[10px] text-gray-500 ml-0.5">様</span>
                                   </div>
                                   {pickupTime && pickupTime !== 'ERR' && (
                                     <div className="text-[11px] font-mono font-semibold mt-0.5 text-blue-600">{pickupTime}</div>
