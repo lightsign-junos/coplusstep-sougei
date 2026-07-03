@@ -69,6 +69,8 @@ export function WeeklySchedule() {
     const newTimes: Record<string, string> = {};
     const newLoading = new Set<string>();
     const newNoCoord = new Set<string>();
+    // 同一座標への重複リクエストをまとめる: cacheKey → { lat, lng, targets }
+    const pending = new Map<string, { lat: number; lng: number; targets: { timeKey: string; arrival: string }[] }>();
 
     for (const v of activeVehicles) {
       const route = goRoutes.find(r => r.vehicleId === v.id);
@@ -107,23 +109,9 @@ export function WeeklySchedule() {
         }
 
         newLoading.add(timeKey);
-        const lat = loc.lat, lng = loc.lng, arrival = route.arrivalTime;
-        const apiKey = import.meta.env.VITE_ORS_API_KEY as string;
-        fetch(
-          `https://api.openrouteservice.org/v2/directions/driving-car?api_key=${apiKey}&start=${lng},${lat}&end=${FACILITY_LNG},${FACILITY_LAT}`
-        )
-          .then(r => r.json())
-          .then((data: { features: { properties: { summary: { duration: number } } }[] }) => {
-            const mins = Math.ceil(data.features[0].properties.summary.duration / 60);
-            setTravelCache(c => ({ ...c, [cacheKey]: mins }));
-            setPickupTimes(pt => ({ ...pt, [timeKey]: calcPickupTime(arrival, mins) }));
-            setLoadingTimes(s => { const n = new Set(s); n.delete(timeKey); return n; });
-          })
-          .catch((e) => {
-            console.error('[ORS] API error:', e, { timeKey, lat, lng });
-            setLoadingTimes(s => { const n = new Set(s); n.delete(timeKey); return n; });
-            setPickupTimes(pt => ({ ...pt, [timeKey]: 'ERR' }));
-          });
+        const entry = pending.get(cacheKey) ?? { lat: loc.lat, lng: loc.lng, targets: [] };
+        entry.targets.push({ timeKey, arrival: route.arrivalTime });
+        pending.set(cacheKey, entry);
       }
     }
 
@@ -136,6 +124,51 @@ export function WeeklySchedule() {
       return merged;
     });
     setNoCoordIds(newNoCoord);
+
+    // 座標ごとに直列でリクエスト（レート制限対策）＋失敗時は自動リトライ
+    if (pending.size > 0) {
+      const apiKey = import.meta.env.VITE_ORS_API_KEY as string;
+      (async () => {
+        for (const [cacheKey, p] of pending) {
+          let mins: number | null = null;
+          for (let attempt = 0; attempt < 3 && mins === null; attempt++) {
+            try {
+              const r = await fetch(
+                `https://api.openrouteservice.org/v2/directions/driving-car?api_key=${apiKey}&start=${p.lng},${p.lat}&end=${FACILITY_LNG},${FACILITY_LAT}`
+              );
+              if (!r.ok) throw new Error(`HTTP ${r.status}`);
+              const data: { features: { properties: { summary: { duration: number } } }[] } = await r.json();
+              mins = Math.ceil(data.features[0].properties.summary.duration / 60);
+            } catch (e) {
+              console.error('[ORS] API error (attempt', attempt + 1, '):', e, cacheKey);
+              await new Promise(res => setTimeout(res, 1000 * (attempt + 1)));
+            }
+          }
+          if (mins !== null) {
+            const m = mins;
+            setTravelCache(c => ({ ...c, [cacheKey]: m }));
+            setPickupTimes(pt => {
+              const n = { ...pt };
+              p.targets.forEach(t => { n[t.timeKey] = calcPickupTime(t.arrival, m); });
+              return n;
+            });
+          } else {
+            setPickupTimes(pt => {
+              const n = { ...pt };
+              p.targets.forEach(t => { n[t.timeKey] = 'ERR'; });
+              return n;
+            });
+          }
+          setLoadingTimes(s => {
+            const n = new Set(s);
+            p.targets.forEach(t => n.delete(t.timeKey));
+            return n;
+          });
+          // 連続リクエストの間隔を空ける
+          await new Promise(res => setTimeout(res, 300));
+        }
+      })();
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     weekKey,
