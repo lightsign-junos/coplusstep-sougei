@@ -197,8 +197,17 @@ export const useDataStore = create<DataState>()(
         }
         const hasData = (data.members?.length ?? 0) > 0 || (data.routes?.length ?? 0) > 0;
         if (hasData) {
+          // シートに列がない項目（nameKana等）はローカル保存値を引き継ぐ（GASロードで消さない）
+          const localMembers = get().members;
+          const mergedMembers = (data.members ?? []).map(gm => {
+            const local = localMembers.find(lm => lm.id === gm.id);
+            return {
+              ...gm,
+              nameKana: gm.nameKana || local?.nameKana || '',
+            };
+          });
           set({
-            members: data.members ?? [],
+            members: mergedMembers,
             memberLocations: data.memberLocations ?? [],
             staff: data.staff ?? [],
             vehicles: data.vehicles ?? [],
