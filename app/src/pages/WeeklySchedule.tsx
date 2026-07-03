@@ -23,7 +23,7 @@ export function WeeklySchedule() {
 
   const {
     vehicles, routes, routeStops, members, memberLocations, staff, dailyOverrides, weeklyDayOverrides,
-    addRouteStop, updateRouteStop, deleteRouteStop,
+    addRouteStop, deleteRouteStop,
     updateRoute, addWeeklyDayOverride, removeWeeklyDayOverride, clearWeekOverrides,
   } = useDataStore();
 
@@ -179,8 +179,6 @@ export function WeeklySchedule() {
   }));
   const today = format(new Date(), 'yyyy-MM-dd');
 
-  const getStops = (routeId: string) =>
-    routeStops.filter(rs => rs.routeId === routeId).sort((a, b) => a.order - b.order);
   const getMember = (id: string) => members.find(m => m.id === id);
   const displayName = (m: ReturnType<typeof getMember>) =>
     m ? getMemberDisplayName(m, members) : '';
