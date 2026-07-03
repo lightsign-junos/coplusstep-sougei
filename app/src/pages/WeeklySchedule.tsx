@@ -55,7 +55,9 @@ export function WeeklySchedule() {
 
   const calcPickupTime = (arrivalTime: string, travelMins: number): string => {
     const [h, m] = arrivalTime.split(':').map(Number);
-    const total = ((h * 60 + m - travelMins) % 1440 + 1440) % 1440;
+    let total = ((h * 60 + m - travelMins) % 1440 + 1440) % 1440;
+    // 5分単位に切り下げ（例 10:41 → 10:40、10:38 → 10:35）
+    total = Math.floor(total / 5) * 5;
     return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
   };
 
