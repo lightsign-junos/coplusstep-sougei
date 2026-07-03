@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Plus, Search, Edit2, Trash2, MapPin, Phone, ChevronDown, ChevronUp, ArrowRight, ArrowLeft, Map } from 'lucide-react';
 import { useDataStore } from '../store/dataStore';
+import { getMemberSortKey } from '../lib/memberDisplay';
 import { Modal } from '../components/common/Modal';
 import { MapPicker } from '../components/common/MapPicker';
 import { DayBadge } from '../components/common/Badge';
@@ -46,7 +47,7 @@ export function MemberMaster() {
 
   const filtered = members
     .filter(m => m.name.includes(search) || (m.nameKana ?? '').includes(search) || m.phone.includes(search))
-    .sort((a, b) => (a.nameKana || a.name).localeCompare(b.nameKana || b.name, 'ja'));
+    .sort((a, b) => getMemberSortKey(a).localeCompare(getMemberSortKey(b), 'ja'));
 
   const getLocations = (memberId: string) =>
     memberLocations.filter(l => l.memberId === memberId);
