@@ -1,16 +1,19 @@
+import { format } from 'date-fns';
+import { Users } from 'lucide-react';
 import { useDataStore } from '../store/dataStore';
 import { getMemberSortKey } from '../lib/memberDisplay';
 import type { Member } from '../types';
 
 const WEEK_DAYS = ['月', '火', '水', '木', '金', '土'];
 
-const DAY_COLORS: Record<string, { header: string; badge: string }> = {
-  月: { header: 'bg-red-50 text-red-700', badge: 'bg-red-100 text-red-700' },
-  火: { header: 'bg-orange-50 text-orange-700', badge: 'bg-orange-100 text-orange-700' },
-  水: { header: 'bg-sky-50 text-sky-700', badge: 'bg-sky-100 text-sky-700' },
-  木: { header: 'bg-green-50 text-green-700', badge: 'bg-green-100 text-green-700' },
-  金: { header: 'bg-amber-50 text-amber-700', badge: 'bg-amber-100 text-amber-700' },
-  土: { header: 'bg-violet-50 text-violet-700', badge: 'bg-violet-100 text-violet-700' },
+// 曜日ごとのアクセントカラー（ヘッダー帯・アバター・カウント）
+const DAY_STYLE: Record<string, { bar: string; avatar: string; count: string; ring: string }> = {
+  月: { bar: 'bg-rose-500',   avatar: 'bg-rose-100 text-rose-600',     count: 'bg-rose-50 text-rose-600',     ring: 'ring-rose-300' },
+  火: { bar: 'bg-orange-500', avatar: 'bg-orange-100 text-orange-600', count: 'bg-orange-50 text-orange-600', ring: 'ring-orange-300' },
+  水: { bar: 'bg-sky-500',    avatar: 'bg-sky-100 text-sky-600',       count: 'bg-sky-50 text-sky-600',       ring: 'ring-sky-300' },
+  木: { bar: 'bg-emerald-500',avatar: 'bg-emerald-100 text-emerald-600', count: 'bg-emerald-50 text-emerald-600', ring: 'ring-emerald-300' },
+  金: { bar: 'bg-amber-500',  avatar: 'bg-amber-100 text-amber-700',   count: 'bg-amber-50 text-amber-700',   ring: 'ring-amber-300' },
+  土: { bar: 'bg-violet-500', avatar: 'bg-violet-100 text-violet-600', count: 'bg-violet-50 text-violet-600', ring: 'ring-violet-300' },
 };
 
 // defaultDaysが文字列("月,火")のまま残っている古いデータにも対応
@@ -31,51 +34,75 @@ export function MemberShift() {
     list: sorted.filter(m => daysOf(m).includes(day)),
   }));
 
-  const maxRows = Math.max(...byDay.map(d => d.list.length), 1);
+  const totalSlots = byDay.reduce((sum, d) => sum + d.list.length, 0);
+  // ISO曜日(1=月〜7=日)を日本語ラベルへ
+  const today = ['月', '火', '水', '木', '金', '土', '日'][Number(format(new Date(), 'i')) - 1];
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold text-gray-900">利用者シフト</h1>
-        <p className="text-xs text-gray-400">利用者マスタの利用日をもとに表示しています</p>
+      {/* ヘッダー */}
+      <div className="flex items-end justify-between mb-5">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">利用者シフト</h1>
+          <p className="text-xs text-gray-400 mt-1">利用者マスタの利用日をもとに自動作成 ・ 週あたり延べ {totalSlots} 名</p>
+        </div>
+        <div className="flex items-center gap-1.5 text-xs text-gray-500 bg-white border border-gray-200 rounded-lg px-3 py-1.5">
+          <Users size={13} className="text-pink-500" />
+          登録利用者 {members.length} 名
+        </div>
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse table-fixed">
-            <thead>
-              <tr>
-                {byDay.map(({ day, list }) => (
-                  <th
-                    key={day}
-                    className={`border border-gray-200 px-2 py-2.5 text-center font-bold text-sm ${DAY_COLORS[day].header}`}
-                  >
-                    {day}
-                    <span className="ml-1.5 text-[11px] font-medium opacity-70">{list.length}名</span>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {Array.from({ length: maxRows }, (_, i) => (
-                <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/60'}>
-                  {byDay.map(({ day, list }) => {
-                    const m = list[i];
-                    return (
-                      <td key={day} className="border border-gray-100 px-2 py-1.5 text-center">
-                        {m ? (
-                          <span className="text-gray-800 font-medium text-[13px]">{m.name}</span>
-                        ) : (
-                          <span className="text-gray-200">―</span>
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {/* 曜日カラム */}
+      <div className="grid grid-cols-6 gap-3 items-start">
+        {byDay.map(({ day, list }) => {
+          const s = DAY_STYLE[day];
+          const isToday = day === today;
+          return (
+            <div
+              key={day}
+              className={`bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col ${
+                isToday ? `ring-2 ${s.ring}` : ''
+              }`}
+            >
+              {/* カラーバー */}
+              <div className={`h-1 ${s.bar}`} />
+
+              {/* 曜日ヘッダー */}
+              <div className="flex items-center justify-between px-3 pt-2.5 pb-2 border-b border-gray-50">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-base font-bold text-gray-800">{day}</span>
+                  {isToday && (
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${s.count}`}>今日</span>
+                  )}
+                </div>
+                <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${s.count}`}>
+                  {list.length}名
+                </span>
+              </div>
+
+              {/* 利用者リスト */}
+              <div className="p-2 space-y-1">
+                {list.length === 0 ? (
+                  <p className="text-center text-xs text-gray-300 py-6">利用なし</p>
+                ) : (
+                  list.map(m => (
+                    <div
+                      key={m.id}
+                      className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      <span
+                        className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0 ${s.avatar}`}
+                      >
+                        {m.name.charAt(0)}
+                      </span>
+                      <span className="text-[13px] font-medium text-gray-800 truncate">{m.name}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
