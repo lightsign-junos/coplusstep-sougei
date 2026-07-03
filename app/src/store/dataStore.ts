@@ -206,12 +206,13 @@ export const useDataStore = create<DataState>()(
               nameKana: gm.nameKana || local?.nameKana || '',
             };
           });
+          // マスタ系はGASが空を返しても手元の値を維持（誤消去からの防御）
           set({
-            members: mergedMembers,
-            memberLocations: data.memberLocations ?? [],
-            staff: data.staff ?? [],
-            vehicles: data.vehicles ?? [],
-            routes: data.routes ?? [],
+            members: mergedMembers.length ? mergedMembers : get().members,
+            memberLocations: data.memberLocations?.length ? data.memberLocations : get().memberLocations,
+            staff: data.staff?.length ? data.staff : get().staff,
+            vehicles: data.vehicles?.length ? data.vehicles : get().vehicles,
+            routes: data.routes?.length ? data.routes : get().routes,
             routeStops: data.routeStops ?? [],
             dailyOverrides: data.dailyOverrides ?? [],
             allowedUsers: data.allowedUsers?.length ? data.allowedUsers : get().allowedUsers,

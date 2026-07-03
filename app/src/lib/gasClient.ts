@@ -64,13 +64,18 @@ export async function gasGetAll(): Promise<GASData | null> {
 export async function gasSaveAll(data: GASData): Promise<void> {
   try {
     // シートのセルに配列を書くと先頭要素しか残らないため、カンマ区切り文字列で保存する
-    const payload = {
+    const payload: Record<string, unknown> = {
       ...data,
       members: data.members.map(m => ({
         ...m,
         defaultDays: Array.isArray(m.defaultDays) ? m.defaultDays.join(',') : m.defaultDays,
       })),
     };
+    // 空配列を送るとGAS側がシートを丸ごと消すため、絶対に空であってはならないマスタは除外する
+    for (const key of ['members', 'memberLocations', 'staff', 'vehicles', 'routes'] as const) {
+      const v = payload[key];
+      if (Array.isArray(v) && v.length === 0) delete payload[key];
+    }
     await fetch(`${GAS_URL}?action=saveAllData`, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
