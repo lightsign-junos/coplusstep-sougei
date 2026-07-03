@@ -142,6 +142,7 @@ export function WeeklySchedule() {
     routeStops.map(r => `${r.id}-${r.order}-${r.memberId}`).join(),
     weeklyDayOverrides.map(o => `${o.id}-${o.type}`).join(),
     memberLocations.map(l => `${l.id}-${l.lat}-${l.lng}`).join(),
+    routes.map(r => `${r.id}-${r.arrivalTime}`).join(),
   ]);
 
   // ── Table view helpers ─────────────────────────────────────
@@ -347,11 +348,28 @@ export function WeeklySchedule() {
                 </tr>
                 <tr>
                   {weekDates.flatMap(d =>
-                    activeVehicles.map(v => (
-                      <th key={`veh-${d.label}-${v.id}`} className={`border border-gray-300 px-2 py-1.5 text-center text-xs font-bold text-white vehicle-${v.color}-header`}>
-                        {v.name}
-                      </th>
-                    ))
+                    activeVehicles.map(v => {
+                      const route = goRoutes.find(r => r.vehicleId === v.id);
+                      return (
+                        <th key={`veh-${d.label}-${v.id}`} className={`border border-gray-300 px-2 py-1.5 text-center text-xs font-bold text-white vehicle-${v.color}-header`}>
+                          <div>{v.name}</div>
+                          {route && (
+                            <div
+                              className="text-[10px] font-normal opacity-90 cursor-pointer hover:underline no-print"
+                              onClick={() => {
+                                const t = prompt('事業所への到着時刻を入力してください（例 10:55）', route.arrivalTime);
+                                if (t && /^\d{1,2}:\d{2}$/.test(t.trim())) {
+                                  updateRoute({ ...route, arrivalTime: t.trim().padStart(5, '0') });
+                                  setPickupTimes({});
+                                }
+                              }}
+                            >
+                              到着 {route.arrivalTime}
+                            </div>
+                          )}
+                        </th>
+                      );
+                    })
                   )}
                 </tr>
                 <tr className="bg-gray-50">
@@ -503,7 +521,7 @@ export function WeeklySchedule() {
                   className="w-full text-left px-4 py-3 rounded-xl border border-gray-100 hover:bg-pink-50 hover:border-pink-200 cursor-pointer transition-colors flex items-center justify-between"
                 >
                   <span className="font-medium text-gray-800 text-sm">{m.name}</span>
-                  <span className="text-xs text-gray-400">{m.defaultDays.length > 0 ? m.defaultDays.join('・') : '曜日未設定'}</span>
+                  <span className="text-xs text-gray-400">{(Array.isArray(m.defaultDays) ? m.defaultDays : String(m.defaultDays ?? '').split(',').filter(Boolean)).join('・') || '曜日未設定'}</span>
                 </button>
               ))
             )}

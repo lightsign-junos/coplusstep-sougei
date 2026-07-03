@@ -33,12 +33,25 @@ function fixGASValues(val: unknown): unknown {
   return val;
 }
 
+// シート保存で配列が "月,火,水" のような文字列に化けるので配列に戻す
+function normalizeMembers(members: Member[] | undefined): Member[] {
+  if (!Array.isArray(members)) return [];
+  return members.map(m => ({
+    ...m,
+    defaultDays: Array.isArray(m.defaultDays)
+      ? m.defaultDays
+      : String(m.defaultDays ?? '').split(',').map(s => s.trim()).filter(Boolean),
+  }));
+}
+
 export async function gasGetAll(): Promise<GASData | null> {
   try {
     const res = await fetch(`${GAS_URL}?action=getAllData`);
     const json = await res.json();
     if (!json.ok) return null;
-    return fixGASValues(json.data) as GASData;
+    const data = fixGASValues(json.data) as GASData;
+    data.members = normalizeMembers(data.members);
+    return data;
   } catch {
     return null;
   }

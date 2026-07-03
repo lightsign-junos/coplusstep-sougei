@@ -304,7 +304,22 @@ export const useDataStore = create<DataState>()(
         }));
       },
     }),
-    { name: 'coplus-step-data' }
+    {
+      name: 'coplus-step-data',
+      onRehydrateStorage: () => (state) => {
+        // 過去にGAS経由で defaultDays が "月,火" のような文字列になったデータを配列に修復
+        if (!state) return;
+        const fixed = state.members.map(m => ({
+          ...m,
+          defaultDays: Array.isArray(m.defaultDays)
+            ? m.defaultDays
+            : String(m.defaultDays ?? '').split(',').map(s => s.trim()).filter(Boolean),
+        }));
+        if (fixed.some((m, i) => m.defaultDays !== state.members[i].defaultDays)) {
+          useDataStore.setState({ members: fixed });
+        }
+      },
+    }
   )
 );
 
