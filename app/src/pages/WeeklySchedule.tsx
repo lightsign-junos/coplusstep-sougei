@@ -262,20 +262,23 @@ export function WeeklySchedule() {
     if (addOverride) removeWeeklyDayOverride(addOverride.id);
   };
 
+  // defaultDaysが文字列("月,火")のまま残っている古いデータにも対応
+  const memberDays = (m: (typeof members)[number]): string[] =>
+    Array.isArray(m.defaultDays)
+      ? m.defaultDays
+      : String(m.defaultDays ?? '').split(',').map(s => s.trim()).filter(Boolean);
+
   const availableForPicking = () => {
     if (!picking) return [];
-    const { dayLabel, vehicleId } = picking;
-    // 現在その曜日に表示されているメンバーを除外
-    const presentIds = new Set(
-      routeStops
-        .filter(rs => {
-          const route = goRoutes.find(r => r.vehicleId === vehicleId);
-          return route && rs.routeId === route.id;
-        })
-        .filter(rs => isActiveOnDay(rs.memberId, vehicleId, dayLabel))
-        .map(rs => rs.memberId)
+    const { dayLabel } = picking;
+    // その曜日にどこかの車両へ配置済みのメンバーを除外（1日1台）
+    const placedIds = new Set(
+      weeklyDayOverrides
+        .filter(o => o.weekKey === weekKey && o.dayLabel === dayLabel && o.type === 'add')
+        .map(o => o.memberId)
     );
-    return members.filter(m => !presentIds.has(m.id));
+    // その曜日に利用日登録がある人だけを表示
+    return members.filter(m => memberDays(m).includes(dayLabel) && !placedIds.has(m.id));
   };
 
   const pickingVehicle = picking ? activeVehicles.find(v => v.id === picking.vehicleId) : null;
