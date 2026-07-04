@@ -26,7 +26,7 @@ export function WeeklySchedule() {
     vehicles, routes, routeStops, members, memberLocations, staff, dailyOverrides, weeklyDayOverrides,
     addRouteStop, deleteRouteStop,
     updateRoute, addWeeklyDayOverride, removeWeeklyDayOverride, clearWeekOverrides,
-    shiftExtras, addShiftExtra, setWeeklyOverrideTime,
+    shiftExtras, addShiftExtra, setWeeklyOverrideTime, setWeeklyOverrideRow,
   } = useDataStore();
 
   const allActiveVehicles = vehicles.filter(v => v.active);
@@ -39,6 +39,8 @@ export function WeeklySchedule() {
   // 乗車時間の手動編集モーダル
   const [editingTime, setEditingTime] = useState<{ overrideId: string; memberName: string; current: string; isManual: boolean } | null>(null);
   const [timeInput, setTimeInput] = useState('');
+  // ドラッグ&ドロップ（同じ曜日×同じ車両の列内のみ）
+  const [dragging, setDragging] = useState<{ overrideId: string; dayLabel: string; vehicleId: string; row: number } | null>(null);
   // 乗車時間計算: key="dayLabel-vehicleId-memberId" → "HH:MM"
   const [pickupTimes, setPickupTimes] = useState<Record<string, string>>({});
   // ORS結果キャッシュ: key="区間" → 分。座標が変わらない限り再取得不要なのでlocalStorageに永続化
@@ -332,6 +334,21 @@ export function WeeklySchedule() {
     setPicking(null);
   };
 
+  // ドロップ時: 同じ曜日×同じ車両の列内で移動（相手がいれば入れ替え）
+  const handleDropOnCell = (dayLabel: string, vehicleId: string, targetRow: number) => {
+    if (!dragging) return;
+    if (dragging.dayLabel !== dayLabel || dragging.vehicleId !== vehicleId) { setDragging(null); return; }
+    if (dragging.row !== targetRow) {
+      const placed = getPlacements(dayLabel, vehicleId);
+      const target = placed.find(p => p.row === targetRow);
+      if (target && target.id !== dragging.overrideId) {
+        setWeeklyOverrideRow(target.id, dragging.row); // 入れ替え
+      }
+      setWeeklyOverrideRow(dragging.overrideId, targetRow);
+    }
+    setDragging(null);
+  };
+
   const handleRemove = (memberId: string, dayLabel: string, vehicleId: string) => {
     const addOverride = weeklyDayOverrides.find(
       o => o.weekKey === weekKey && o.memberId === memberId && o.vehicleId === vehicleId && o.dayLabel === dayLabel && o.type === 'add'
@@ -539,11 +556,17 @@ export function WeeklySchedule() {
                         const pickupTime = p ? pickupTimes[timeKey2] : undefined;
                         const isLoadingTime = !!p && loadingTimes.has(timeKey2);
                         const isNoCoord = !!p && noCoordIds.has(timeKey2);
+                        // ドラッグ中: 同じ曜日×同じ車両の列だけ受け入れ可能
+                        const isDropTarget = !!dragging && dragging.dayLabel === d.label && dragging.vehicleId === v.id;
                         return (
                           <td
                             key={`cell-${d.label}-${v.id}-${rowIdx}`}
                             onClick={showAdd ? () => setPicking({ dayLabel: d.label, vehicleId: v.id, rowIdx }) : undefined}
-                            className={`border border-gray-200 px-0 py-0 text-center align-middle min-w-[80px] ${isToday ? 'bg-pink-50/40' : ''} ${showAdd ? 'cursor-pointer hover:bg-gray-50' : ''}`}
+                            onDragOver={isDropTarget ? (e) => e.preventDefault() : undefined}
+                            onDrop={isDropTarget ? (e) => { e.preventDefault(); handleDropOnCell(d.label, v.id, rowIdx); } : undefined}
+                            className={`border border-gray-200 px-0 py-0 text-center align-middle min-w-[80px] ${isToday ? 'bg-pink-50/40' : ''} ${showAdd ? 'cursor-pointer hover:bg-gray-50' : ''} ${
+                              isDropTarget && dragging!.row !== rowIdx ? 'ring-2 ring-inset ring-pink-300 bg-pink-50/60' : ''
+                            }`}
                             style={{height: '52px', maxHeight: '52px', overflow: 'hidden'}}
                           >
                             <div className="h-[52px] flex flex-col items-center justify-center px-2 overflow-hidden">
@@ -554,7 +577,18 @@ export function WeeklySchedule() {
                                   <div className="text-[10px] font-bold">欠席</div>
                                 </div>
                               ) : (
-                                <div className="cell-line group relative w-full">
+                                <div
+                                  className={`cell-line group relative w-full cursor-grab active:cursor-grabbing ${
+                                    dragging?.overrideId === p!.id ? 'opacity-40' : ''
+                                  }`}
+                                  draggable
+                                  onDragStart={(e) => {
+                                    e.dataTransfer.setData('text/plain', '');
+                                    e.dataTransfer.effectAllowed = 'move';
+                                    setDragging({ overrideId: p!.id, dayLabel: d.label, vehicleId: v.id, row: rowIdx });
+                                  }}
+                                  onDragEnd={() => setDragging(null)}
+                                >
                                   <div className="font-medium text-gray-800 text-[14px] leading-tight whitespace-nowrap truncate text-center">
                                     {displayName(member)}<span className="print-sama text-[10px] text-gray-500 ml-0.5">様</span>
                                   </div>
