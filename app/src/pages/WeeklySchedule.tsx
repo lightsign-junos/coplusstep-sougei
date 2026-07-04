@@ -697,7 +697,7 @@ export function WeeklySchedule() {
                                       className="cell-time block w-full text-center text-[11px] font-mono font-semibold mt-0.5 text-gray-800 cursor-pointer hover:underline"
                                       title="クリックで時間を手動設定"
                                     >
-                                      {pickupTime}{p!.manualTime && <span className="text-[9px] ml-0.5 no-print">手</span>}
+                                      {pickupTime}
                                     </button>
                                   )}
                                   {pickupTime === 'ERR' && (
