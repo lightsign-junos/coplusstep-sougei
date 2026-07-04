@@ -148,6 +148,9 @@ export function WeeklySchedule() {
       to
         ? `${from.lat.toFixed(5)},${from.lng.toFixed(5)}->${to.lat.toFixed(5)},${to.lng.toFixed(5)}`
         : `${from.lat.toFixed(5)},${from.lng.toFixed(5)}->FAC`;
+    // 乗降場所が実質同じ地点（同一マンション等）かどうか。同じなら移動もバッファも発生しない
+    const isSameSpot = (a: Point, b: Point) =>
+      Math.abs(a.lat - b.lat) < 0.0001 && Math.abs(a.lng - b.lng) < 0.0001; // 約10m以内
     const needed = new Map<string, { from: Point; to: Point | null }>();
     for (const chain of chains) {
       const s = chain.stops;
@@ -158,6 +161,7 @@ export function WeeklySchedule() {
         const isLast = i === s.length - 1;
         const to = isLast ? null : s[i + 1].loc;
         if (!isLast && !to) continue; // 下の人が座標なし → この区間は計算不能
+        if (!isLast && to && isSameSpot(from, to)) continue; // 同じ場所同士は区間不要
         const key = legKey(from, to);
         if (travelCache[key] === undefined && !needed.has(key)) needed.set(key, { from, to });
       }
@@ -188,6 +192,11 @@ export function WeeklySchedule() {
           const isLast = i === s.length - 1;
           const to = isLast ? null : s[i + 1].loc;
           if (!isLast && !to) break;
+          // 同じ場所（同じマンション等）に連続配置されている場合は移動もバッファもゼロ＝同じ時間
+          if (!isLast && to && isSameSpot(from, to)) {
+            times[s[i].timeKey] = toStr(below);
+            continue;
+          }
           const dur = durations[legKey(from, to)];
           if (dur === undefined) {
             // この区間が未取得 → この人から上（手動を除く）は計算待ち
