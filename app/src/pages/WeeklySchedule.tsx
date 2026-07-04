@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, Printer, Plus, Copy } from 'lucide-react';
 import { useDataStore } from '../store/dataStore';
 import { getMemberDisplayName } from '../lib/memberDisplay';
 import { Modal } from '../components/common/Modal';
+import type { Member } from '../types';
 
 
 const WEEK_DAYS = [
@@ -25,6 +26,7 @@ export function WeeklySchedule() {
     vehicles, routes, routeStops, members, memberLocations, staff, dailyOverrides, weeklyDayOverrides,
     addRouteStop, deleteRouteStop,
     updateRoute, addWeeklyDayOverride, removeWeeklyDayOverride, clearWeekOverrides,
+    shiftExtras, addShiftExtra,
   } = useDataStore();
 
   const allActiveVehicles = vehicles.filter(v => v.active);
@@ -303,20 +305,29 @@ export function WeeklySchedule() {
       ? m.defaultDays
       : String(m.defaultDays ?? '').split(',').map(s => s.trim()).filter(Boolean);
 
+  // 配置候補: scheduled=その曜日の利用予定者（利用日未設定・振替済み含む） / others=それ以外（選ぶと振替登録）
   const availableForPicking = () => {
-    if (!picking) return [];
+    if (!picking) return { scheduled: [] as Member[], others: [] as Member[], dateStr: '' };
     const { dayLabel } = picking;
+    const dateStr = weekDates.find(d => d.label === dayLabel)?.dateStr ?? '';
     // その曜日にどこかの車両へ配置済みのメンバーを除外（1日1台）
     const placedIds = new Set(
       weeklyDayOverrides
         .filter(o => o.weekKey === weekKey && o.dayLabel === dayLabel && o.type === 'add')
         .map(o => o.memberId)
     );
-    // その曜日に利用日登録がある人を表示（利用日未入力の人は毎日表示）
-    return members.filter(m => {
+    const scheduled: Member[] = [];
+    const others: Member[] = [];
+    for (const m of members) {
+      if (placedIds.has(m.id)) continue;
       const days = memberDays(m);
-      return (days.length === 0 || days.includes(dayLabel)) && !placedIds.has(m.id);
-    });
+      const isScheduled =
+        days.length === 0 ||
+        days.includes(dayLabel) ||
+        shiftExtras.some(e => e.date === dateStr && e.memberId === m.id);
+      (isScheduled ? scheduled : others).push(m);
+    }
+    return { scheduled, others, dateStr };
   };
 
   const pickingVehicle = picking ? activeVehicles.find(v => v.id === picking.vehicleId) : null;
@@ -552,22 +563,55 @@ export function WeeklySchedule() {
           onClose={() => setPicking(null)}
           size="sm"
         >
-          <div className="space-y-2">
-            {availableForPicking().length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-4">追加できる利用者がいません</p>
-            ) : (
-              availableForPicking().map(m => (
-                <button
-                  key={m.id}
-                  onClick={() => handleAdd(m.id)}
-                  className="w-full text-left px-4 py-3 rounded-xl border border-gray-100 hover:bg-pink-50 hover:border-pink-200 cursor-pointer transition-colors flex items-center justify-between"
-                >
-                  <span className="font-medium text-gray-800 text-sm">{m.name}</span>
-                  <span className="text-xs text-gray-400">{(Array.isArray(m.defaultDays) ? m.defaultDays : String(m.defaultDays ?? '').split(',').filter(Boolean)).join('・') || '曜日未設定'}</span>
-                </button>
-              ))
-            )}
-          </div>
+          {(() => {
+            const { scheduled, others, dateStr } = availableForPicking();
+            const extraIds = new Set(shiftExtras.filter(e => e.date === dateStr).map(e => e.memberId));
+            return (
+              <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+                {scheduled.length === 0 && others.length === 0 && (
+                  <p className="text-sm text-gray-400 text-center py-4">追加できる利用者がいません</p>
+                )}
+                {scheduled.map(m => (
+                  <button
+                    key={m.id}
+                    onClick={() => handleAdd(m.id)}
+                    className="w-full text-left px-4 py-3 rounded-xl border border-gray-100 hover:bg-pink-50 hover:border-pink-200 cursor-pointer transition-colors flex items-center justify-between"
+                  >
+                    <span className="font-medium text-gray-800 text-sm flex items-center gap-2">
+                      {m.name}
+                      {extraIds.has(m.id) && (
+                        <span className="text-[10px] font-bold text-violet-600 bg-violet-100 rounded px-1.5 py-0.5">振替</span>
+                      )}
+                    </span>
+                    <span className="text-xs text-gray-400">{(Array.isArray(m.defaultDays) ? m.defaultDays : String(m.defaultDays ?? '').split(',').filter(Boolean)).join('・') || '曜日未設定'}</span>
+                  </button>
+                ))}
+                {others.length > 0 && (
+                  <>
+                    <p className="pt-2 px-1 text-[11px] font-semibold text-violet-500">
+                      その他の利用者（選ぶと振替として登録されます）
+                    </p>
+                    {others.map(m => (
+                      <button
+                        key={m.id}
+                        onClick={() => {
+                          if (dateStr) addShiftExtra(dateStr, m.id);
+                          handleAdd(m.id);
+                        }}
+                        className="w-full text-left px-4 py-3 rounded-xl border border-dashed border-violet-200 hover:bg-violet-50 cursor-pointer transition-colors flex items-center justify-between"
+                      >
+                        <span className="font-medium text-gray-700 text-sm flex items-center gap-2">
+                          {m.name}
+                          <span className="text-[10px] font-bold text-violet-600 bg-violet-100 rounded px-1.5 py-0.5">＋振替</span>
+                        </span>
+                        <span className="text-xs text-gray-400">{(Array.isArray(m.defaultDays) ? m.defaultDays : String(m.defaultDays ?? '').split(',').filter(Boolean)).join('・') || '曜日未設定'}</span>
+                      </button>
+                    ))}
+                  </>
+                )}
+              </div>
+            );
+          })()}
         </Modal>
       )}
 
