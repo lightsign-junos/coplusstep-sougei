@@ -73,6 +73,8 @@ export function WeeklySchedule() {
   // 事業所（昭和島教室）〒143-0004 東京都大田区昭和島1-2-8
   const FACILITY_LAT = 35.5702778;
   const FACILITY_LNG = 139.7513047;
+  // 1人あたりの乗降作業時間（車を停める・迎えに行く・乗せる）。走行時間には含まれないため別途加算
+  const BOARDING_BUFFER_MIN = 3;
 
   const handleCopyWeek = () => {
     const prevWeekKey = format(subWeeks(weekStart, 1), 'yyyy-MM-dd');
@@ -192,7 +194,8 @@ export function WeeklySchedule() {
             for (let j = i; j >= 0; j--) if (!s[j].manualTime) pending.add(s[j].timeKey);
             break;
           }
-          below = Math.floor((below - dur) / 5) * 5;
+          // 走行時間 + 乗降作業バッファ（1人あたり3分）
+          below = Math.floor((below - dur - BOARDING_BUFFER_MIN) / 5) * 5;
           times[s[i].timeKey] = toStr(below);
         }
       }
@@ -234,9 +237,9 @@ export function WeeklySchedule() {
             const data: { features: { properties: { summary: { duration: number; distance: number } } }[] } = await r.json();
             const sum = data.features[0].properties.summary;
             // ORSは信号・渋滞なしの楽観的な速度で計算するため、
-            // 都市部の実勢速度20km/hで走った場合の時間を下限にする
+            // 都市部の実勢速度15km/hで走った場合の時間を下限にする
             const orsMins = sum.duration / 60;
-            const realisticMins = (sum.distance / 1000) / 20 * 60;
+            const realisticMins = (sum.distance / 1000) / 15 * 60;
             mins = Math.ceil(Math.max(orsMins, realisticMins));
           } catch (e) {
             console.error('[ORS] API error (attempt', attempt + 1, '):', e, key);
