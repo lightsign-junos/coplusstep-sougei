@@ -108,7 +108,6 @@ export function WeeklySchedule() {
     type ChainStop = { memberId: string; timeKey: string; loc: Point | null; manualTime?: string };
     const chains: { arrival: string; stops: ChainStop[] }[] = [];
     const newNoCoord = new Set<string>();
-    const newLoading = new Set<string>();
 
     for (const v of activeVehicles) {
       const route = goRoutes.find(r => r.vehicleId === v.id);
