@@ -652,8 +652,8 @@ export function WeeklySchedule() {
                             {member ? (
                               absent ? (
                                 <div className="cell-line text-red-400">
-                                  <div className="line-through text-[11px]">{displayName(member)}<span className="text-[9px] ml-0.5">様</span></div>
-                                  <div className="text-[10px] font-bold">欠席</div>
+                                  <div className="cell-name line-through text-[11px]">{displayName(member)}<span className="text-[9px] ml-0.5">様</span></div>
+                                  <div className="cell-time text-[10px] font-bold">欠席</div>
                                 </div>
                               ) : (
                                 <div
@@ -681,7 +681,7 @@ export function WeeklySchedule() {
                                     size={11}
                                     className="absolute -left-1 top-1/2 -translate-y-1/2 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity no-print"
                                   />
-                                  <div className="font-medium text-gray-800 text-[14px] leading-tight whitespace-nowrap truncate text-center">
+                                  <div className="cell-name font-medium text-gray-800 text-[14px] leading-tight whitespace-nowrap truncate text-center">
                                     {displayName(member)}<span className="print-sama text-[10px] text-gray-500 ml-0.5">様</span>
                                   </div>
                                   {pickupTime && pickupTime !== 'ERR' && (
@@ -691,19 +691,17 @@ export function WeeklySchedule() {
                                         setTimeInput(pickupTime);
                                         setEditingTime({ overrideId: p!.id, memberName: displayName(member), current: pickupTime, isManual: !!p!.manualTime });
                                       }}
-                                      className={`text-[11px] font-mono font-semibold mt-0.5 cursor-pointer hover:underline ${
-                                        p!.manualTime ? 'text-orange-600' : 'text-blue-600'
-                                      }`}
+                                      className="cell-time block w-full text-center text-[11px] font-mono font-semibold mt-0.5 text-gray-800 cursor-pointer hover:underline"
                                       title="クリックで時間を手動設定"
                                     >
                                       {pickupTime}{p!.manualTime && <span className="text-[9px] ml-0.5 no-print">手</span>}
                                     </button>
                                   )}
                                   {pickupTime === 'ERR' && (
-                                    <div className="text-[10px] text-red-500 mt-0.5">API失敗</div>
+                                    <div className="cell-time text-[10px] text-red-500 mt-0.5">API失敗</div>
                                   )}
                                   {isLoadingTime && !pickupTime && (
-                                    <div className="text-[10px] text-gray-400 mt-0.5">計算中...</div>
+                                    <div className="cell-time text-[10px] text-gray-400 mt-0.5">計算中...</div>
                                   )}
                                   {isNoCoord && !pickupTime && (
                                     <button
@@ -712,7 +710,7 @@ export function WeeklySchedule() {
                                         setTimeInput('10:30');
                                         setEditingTime({ overrideId: p!.id, memberName: displayName(member), current: '', isManual: false });
                                       }}
-                                      className="text-[10px] text-orange-500 mt-0.5 cursor-pointer hover:underline"
+                                      className="cell-time block w-full text-center text-[10px] text-orange-500 mt-0.5 cursor-pointer hover:underline"
                                       title="クリックで時間を手動設定"
                                     >
                                       座標なし

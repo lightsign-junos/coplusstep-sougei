@@ -94,10 +94,6 @@ body {
     font-size: 3.5pt !important;
     vertical-align: middle !important;
   }
-  /* 名前部分のフォントを大きく */
-  .print-table-wrap table td .cell-line > *:first-child {
-    font-size: 9pt !important;
-  }
 
   /* ④ 運転・添乗ラベルを非表示 */
   .print-table-wrap table td .row-label {
@@ -112,11 +108,20 @@ body {
   }
   .print-table-wrap table td .cell-line > * {
     display: block !important;
+    width: 100% !important;
     text-align: center !important;
     white-space: nowrap !important;
     overflow: hidden !important;
     font-size: 7pt !important;
     line-height: 1.2 !important;
+  }
+  /* 名前は要素の種類やDOM順に関係なく専用クラスで大きく表示 */
+  .print-table-wrap table td .cell-name {
+    font-size: 9pt !important;
+  }
+  /* 時間は自動/手動を色で分けず統一。専用クラスで幅いっぱい中央揃え */
+  .print-table-wrap table td .cell-time {
+    color: #1f2937 !important;
   }
 
   /* ページまたぎ防止 */
