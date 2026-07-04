@@ -77,6 +77,8 @@ interface DataState {
   weeklyDayOverrides: WeeklyDayOverride[];
   // 利用者シフト（カレンダー）の欠勤マーク。date="yyyy-MM-dd"。記録がない人は出勤扱い
   shiftAbsences: { date: string; memberId: string }[];
+  // 振替・臨時利用（その日だけ追加で来る人）
+  shiftExtras: { date: string; memberId: string }[];
   // Vel weekly toggle
   velWeeks: Record<string, boolean>; // weekStart -> enabled
   // GAS sync
@@ -132,6 +134,8 @@ interface DataState {
   // 利用者シフトの出欠
   markShiftAbsent: (date: string, memberId: string) => void;
   markShiftPresent: (date: string, memberId: string) => void;
+  addShiftExtra: (date: string, memberId: string) => void;
+  removeShiftExtra: (date: string, memberId: string) => void;
 
   // Vel toggle
   setVelEnabled: (weekStart: string, enabled: boolean) => void;
@@ -167,6 +171,37 @@ function ensureGoRoutes(routes: Route[], vehicles: Vehicle[]): Route[] {
   ];
 }
 
+// 日次の利用予定/実利用/稼働率を集計（今年の営業日すべて）。ドライブのattendance_dailyシートに書き出す
+function computeAttendanceDaily(s: DataState): { date: string; scheduled: number; present: number; rate: number | '' }[] {
+  const DAY_LABELS = ['月', '火', '水', '木', '金', '土', '日'];
+  const daysOf = (m: Member): string[] =>
+    Array.isArray(m.defaultDays)
+      ? m.defaultDays
+      : String(m.defaultDays ?? '').split(',').map(x => x.trim()).filter(Boolean);
+  const memberIds = new Set(s.members.map(m => m.id));
+  const year = new Date().getFullYear();
+  const rows: { date: string; scheduled: number; present: number; rate: number | '' }[] = [];
+  const d = new Date(year, 0, 1);
+  while (d.getFullYear() === year) {
+    const label = DAY_LABELS[(d.getDay() + 6) % 7]; // getDay: 0=日 → ISO月曜始まりへ
+    if (label !== '日') {
+      const iso = `${year}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const base = s.members.filter(m => {
+        const dd = daysOf(m);
+        return dd.length === 0 || dd.includes(label);
+      });
+      const baseIds = new Set(base.map(m => m.id));
+      const extras = s.shiftExtras.filter(e => e.date === iso && !baseIds.has(e.memberId) && memberIds.has(e.memberId));
+      const scheduled = base.length + extras.length;
+      const absent = s.shiftAbsences.filter(a => a.date === iso && baseIds.has(a.memberId)).length;
+      const present = scheduled - absent;
+      rows.push({ date: iso, scheduled, present, rate: scheduled > 0 ? Math.round((present / scheduled) * 100) : '' });
+    }
+    d.setDate(d.getDate() + 1);
+  }
+  return rows;
+}
+
 function scheduleGASSave() {
   if (_gasDebounceTimer) clearTimeout(_gasDebounceTimer);
   useDataStore.setState({ syncStatus: 'saving' });
@@ -183,6 +218,9 @@ function scheduleGASSave() {
         routeStops: s.routeStops,
         dailyOverrides: s.dailyOverrides,
         allowedUsers: s.allowedUsers,
+        shiftAbsences: s.shiftAbsences,
+        shiftExtras: s.shiftExtras,
+        attendanceDaily: computeAttendanceDaily(s),
       });
       useDataStore.setState({ syncStatus: 'saved' });
       setTimeout(() => useDataStore.setState({ syncStatus: 'idle' }), 2000);
@@ -207,6 +245,7 @@ export const useDataStore = create<DataState>()(
       dailyOverrides: [],
       weeklyDayOverrides: [],
       shiftAbsences: [],
+      shiftExtras: [],
       velWeeks: {},
       gasLoaded: false,
       syncStatus: 'idle' as const,
@@ -255,6 +294,8 @@ export const useDataStore = create<DataState>()(
               routeStops: data.routeStops ?? [],
               dailyOverrides: data.dailyOverrides ?? [],
               allowedUsers: data.allowedUsers?.length ? data.allowedUsers : get().allowedUsers,
+              shiftAbsences: data.shiftAbsences?.length ? data.shiftAbsences : get().shiftAbsences,
+              shiftExtras: data.shiftExtras?.length ? data.shiftExtras : get().shiftExtras,
               gasLoaded: true,
             });
           } else {
@@ -330,6 +371,16 @@ export const useDataStore = create<DataState>()(
           : [...s.shiftAbsences, { date, memberId }],
       })),
       markShiftPresent: (date, memberId) => set(s => ({
+        shiftAbsences: s.shiftAbsences.filter(a => !(a.date === date && a.memberId === memberId)),
+      })),
+      addShiftExtra: (date, memberId) => set(s => ({
+        shiftExtras: s.shiftExtras.some(e => e.date === date && e.memberId === memberId)
+          ? s.shiftExtras
+          : [...s.shiftExtras, { date, memberId }],
+      })),
+      removeShiftExtra: (date, memberId) => set(s => ({
+        shiftExtras: s.shiftExtras.filter(e => !(e.date === date && e.memberId === memberId)),
+        // 振替を取り消したらその日の欠勤記録も掃除
         shiftAbsences: s.shiftAbsences.filter(a => !(a.date === date && a.memberId === memberId)),
       })),
       removeWeeklyDayOverride: (id) => set(s => ({ weeklyDayOverrides: s.weeklyDayOverrides.filter(x => x.id !== id) })),
@@ -419,6 +470,8 @@ useDataStore.subscribe((state, prev) => {
     state.routes !== prev.routes ||
     state.routeStops !== prev.routeStops ||
     state.dailyOverrides !== prev.dailyOverrides ||
-    state.allowedUsers !== prev.allowedUsers;
+    state.allowedUsers !== prev.allowedUsers ||
+    state.shiftAbsences !== prev.shiftAbsences ||
+    state.shiftExtras !== prev.shiftExtras;
   if (changed) scheduleGASSave();
 });

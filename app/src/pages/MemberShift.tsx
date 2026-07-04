@@ -20,22 +20,35 @@ const daysOf = (m: Member): string[] =>
     : String(m.defaultDays ?? '').split(',').map(s => s.trim()).filter(Boolean);
 
 export function MemberShift() {
-  const { members, shiftAbsences, markShiftAbsent, markShiftPresent } = useDataStore();
+  const {
+    members, shiftAbsences, shiftExtras,
+    markShiftAbsent, markShiftPresent, addShiftExtra, removeShiftExtra,
+  } = useDataStore();
   const [monthBase, setMonthBase] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [showExtraPicker, setShowExtraPicker] = useState(false);
 
   const sorted = [...members].sort((a, b) =>
     getMemberSortKey(a).localeCompare(getMemberSortKey(b), 'ja')
   );
 
-  // その日の利用予定者（利用日未入力の人は毎日扱い・日曜は休み）
-  const scheduledFor = (d: Date): Member[] => {
+  // その日の固定利用予定者（利用日未入力の人は毎日扱い・日曜は休み）
+  const baseScheduledFor = (d: Date): Member[] => {
     const label = dayLabelOf(d);
     if (label === '日') return [];
     return sorted.filter(m => {
       const days = daysOf(m);
       return days.length === 0 || days.includes(label);
     });
+  };
+
+  // その日の振替・臨時利用者
+  const extrasFor = (d: Date, base: Member[]): Member[] => {
+    const dateStr = format(d, 'yyyy-MM-dd');
+    const baseIds = new Set(base.map(m => m.id));
+    return sorted.filter(m =>
+      !baseIds.has(m.id) && shiftExtras.some(e => e.date === dateStr && e.memberId === m.id)
+    );
   };
 
   const absentSetFor = (dateStr: string) =>
@@ -51,15 +64,22 @@ export function MemberShift() {
   for (let i = 0; i < gridDays.length; i += 7) weeks.push(gridDays.slice(i, i + 7));
   const todayStr = format(new Date(), 'yyyy-MM-dd');
 
-  // 出勤/予定/稼働率の集計ヘルパー
+  // 出勤/予定/稼働率の集計ヘルパー（予定 = 固定利用 + 振替）
+  const dayStats = (d: Date) => {
+    const base = baseScheduledFor(d);
+    const extras = extrasFor(d, base);
+    const scheduled = base.length + extras.length;
+    const absent = base.filter(m => absentSetFor(format(d, 'yyyy-MM-dd')).has(m.id)).length;
+    return { scheduled, absent, present: scheduled - absent };
+  };
   const statsFor = (days: Date[]) => {
     let scheduled = 0;
     let absent = 0;
     for (const d of days) {
       if (!isSameMonth(d, monthBase) || dayLabelOf(d) === '日') continue;
-      const list = scheduledFor(d);
-      scheduled += list.length;
-      absent += list.filter(m => absentSetFor(format(d, 'yyyy-MM-dd')).has(m.id)).length;
+      const st = dayStats(d);
+      scheduled += st.scheduled;
+      absent += st.absent;
     }
     const present = scheduled - absent;
     const rate = scheduled > 0 ? Math.round((present / scheduled) * 100) : null;
@@ -71,8 +91,13 @@ export function MemberShift() {
 
   // モーダル用
   const selDateStr = selectedDate ? format(selectedDate, 'yyyy-MM-dd') : '';
-  const selScheduled = selectedDate ? scheduledFor(selectedDate) : [];
+  const selBase = selectedDate ? baseScheduledFor(selectedDate) : [];
+  const selExtras = selectedDate ? extrasFor(selectedDate, selBase) : [];
   const selAbsent = absentSetFor(selDateStr);
+  const selScheduledCount = selBase.length + selExtras.length;
+  const selCandidates = selectedDate
+    ? sorted.filter(m => !selBase.some(b => b.id === m.id) && !selExtras.some(e => e.id === m.id))
+    : [];
 
   return (
     <div className="flex flex-col h-full">
@@ -153,10 +178,9 @@ export function MemberShift() {
                 const label = dayLabelOf(d);
                 const isSunday = label === '日';
                 const isSaturday = label === '土';
-                const scheduled = inMonth ? scheduledFor(d) : [];
-                const absent = scheduled.filter(m => absentSetFor(dateStr).has(m.id)).length;
-                const present = scheduled.length - absent;
-                const clickable = inMonth && !isSunday && scheduled.length > 0;
+                const st = inMonth && !isSunday ? dayStats(d) : { scheduled: 0, absent: 0, present: 0 };
+                const { scheduled: schedCount, absent, present } = st;
+                const clickable = inMonth && !isSunday;
 
                 if (!inMonth) {
                   return <div key={dateStr} className="border-r border-gray-100 last:border-r-0 bg-gray-50/50" />;
@@ -198,11 +222,11 @@ export function MemberShift() {
                           {present}
                         </span>
                         <span className="text-[10px] text-gray-400">名 出勤</span>
-                        {scheduled.length > 0 && (
+                        {schedCount > 0 && (
                           <span className={`ml-auto text-[11px] font-bold tabular-nums ${
                             absent > 0 ? 'text-red-500' : 'text-gray-300'
                           }`}>
-                            {Math.round((present / scheduled.length) * 100)}%
+                            {Math.round((present / schedCount) * 100)}%
                           </span>
                         )}
                       </div>
@@ -251,14 +275,15 @@ export function MemberShift() {
         >
           <div className="space-y-1.5 max-h-[60vh] overflow-y-auto pr-1">
             <div className="flex items-center justify-between px-1 pb-2 text-xs text-gray-400">
-              <span>利用予定 {selScheduled.length} 名</span>
+              <span>利用予定 {selScheduledCount} 名{selExtras.length > 0 && `（うち振替 ${selExtras.length}）`}</span>
               <span>
-                <span className="text-emerald-600 font-semibold">出勤 {selScheduled.length - selAbsent.size}</span>
+                <span className="text-emerald-600 font-semibold">出勤 {selScheduledCount - [...selAbsent].filter(id => selBase.some(b => b.id === id)).length}</span>
                 <span className="mx-1">/</span>
-                <span className={selAbsent.size > 0 ? 'text-red-500 font-semibold' : ''}>欠勤 {selAbsent.size}</span>
+                <span className={selAbsent.size > 0 ? 'text-red-500 font-semibold' : ''}>欠勤 {[...selAbsent].filter(id => selBase.some(b => b.id === id)).length}</span>
               </span>
             </div>
-            {selScheduled.map(m => {
+            {/* 固定利用者 */}
+            {selBase.map(m => {
               const isAbsent = selAbsent.has(m.id);
               return (
                 <div
@@ -295,6 +320,59 @@ export function MemberShift() {
                 </div>
               );
             })}
+
+            {/* 振替・臨時利用者 */}
+            {selExtras.map(m => (
+              <div
+                key={m.id}
+                className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border border-violet-100 bg-violet-50/50"
+              >
+                <span className="flex items-center gap-2 min-w-0">
+                  <span className="text-sm font-medium text-gray-800 truncate">{m.name}</span>
+                  <span className="text-[10px] font-bold text-violet-600 bg-violet-100 rounded px-1.5 py-0.5 flex-shrink-0">振替</span>
+                </span>
+                <button
+                  onClick={() => removeShiftExtra(selDateStr, m.id)}
+                  className="px-2.5 py-1 rounded-lg text-xs font-semibold text-gray-400 bg-gray-100 hover:bg-red-50 hover:text-red-500 cursor-pointer transition-colors flex-shrink-0"
+                >
+                  取消
+                </button>
+              </div>
+            ))}
+
+            {/* 振替の追加 */}
+            {!showExtraPicker ? (
+              <button
+                onClick={() => setShowExtraPicker(true)}
+                className="w-full mt-1 px-3 py-2 rounded-xl border border-dashed border-violet-200 text-xs font-semibold text-violet-500 hover:bg-violet-50 cursor-pointer transition-colors"
+              >
+                ＋ 振替・臨時利用を追加
+              </button>
+            ) : (
+              <div className="mt-1 border border-violet-100 rounded-xl overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-1.5 bg-violet-50 text-[11px] font-semibold text-violet-600">
+                  追加する利用者を選択
+                  <button onClick={() => setShowExtraPicker(false)} className="text-violet-400 hover:text-violet-600 cursor-pointer">
+                    <X size={13} />
+                  </button>
+                </div>
+                <div className="max-h-40 overflow-y-auto">
+                  {selCandidates.length === 0 ? (
+                    <p className="px-3 py-3 text-xs text-gray-400 text-center">追加できる利用者がいません</p>
+                  ) : (
+                    selCandidates.map(m => (
+                      <button
+                        key={m.id}
+                        onClick={() => { addShiftExtra(selDateStr, m.id); setShowExtraPicker(false); }}
+                        className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-violet-50 cursor-pointer border-b border-gray-50 last:border-0"
+                      >
+                        {m.name}
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </Modal>
       )}
