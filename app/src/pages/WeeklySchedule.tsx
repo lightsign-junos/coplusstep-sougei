@@ -130,7 +130,6 @@ export function WeeklySchedule() {
             if (!o.manualTime) newNoCoord.add(timeKey);
             return { memberId: o.memberId, timeKey, loc: null, manualTime: o.manualTime };
           }
-          if (!o.manualTime) newLoading.add(timeKey);
           return { memberId: o.memberId, timeKey, loc: { lat: loc.lat, lng: loc.lng }, manualTime: o.manualTime };
         });
         chains.push({ arrival: route.arrivalTime, stops });
@@ -138,12 +137,10 @@ export function WeeklySchedule() {
     }
 
     setNoCoordIds(newNoCoord);
-    setLoadingTimes(prev => {
-      const merged = new Set(prev);
-      newLoading.forEach(k => merged.add(k));
-      return merged;
-    });
-    if (chains.length === 0) return;
+    if (chains.length === 0) {
+      setLoadingTimes(new Set());
+      return;
+    }
 
     // 必要な区間（出発地→目的地）を重複なく集める。目的地nullは事業所
     const legKey = (from: Point, to: Point | null) =>
@@ -155,7 +152,7 @@ export function WeeklySchedule() {
       const s = chain.stops;
       for (let i = 0; i < s.length; i++) {
         const from = s[i].loc;
-        if (!from) continue;
+        if (!from || s[i].manualTime) continue; // 手動の人は区間不要
         // 下の人（次の有効な行き先）: 最後尾は事業所
         const isLast = i === s.length - 1;
         const to = isLast ? null : s[i + 1].loc;
@@ -165,13 +162,58 @@ export function WeeklySchedule() {
       }
     }
 
+    // 下から上へ連鎖計算（各段で5分切り下げ）。
+    // 区間が揃っている列はその場で計算し、足りない列のマスだけpendingとして返す
+    const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+    const toStr = (min: number) => {
+      const m = ((min % 1440) + 1440) % 1440;
+      return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+    };
+    const computeAll = (durations: Record<string, number>) => {
+      const times: Record<string, string> = {};
+      const pending = new Set<string>();
+      for (const chain of chains) {
+        const s = chain.stops;
+        let below = toMin(chain.arrival); // 直下の基準時刻（最後尾は到着時刻）
+        for (let i = s.length - 1; i >= 0; i--) {
+          // 手動設定があれば最優先。上の人はこの時間を基準に連鎖する
+          if (s[i].manualTime) {
+            times[s[i].timeKey] = s[i].manualTime!;
+            below = toMin(s[i].manualTime!);
+            continue;
+          }
+          const from = s[i].loc;
+          if (!from) break; // 座標なし → その人と上は計算不能
+          const isLast = i === s.length - 1;
+          const to = isLast ? null : s[i + 1].loc;
+          if (!isLast && !to) break;
+          const dur = durations[legKey(from, to)];
+          if (dur === undefined) {
+            // この区間が未取得 → この人から上（手動を除く）は計算待ち
+            for (let j = i; j >= 0; j--) if (!s[j].manualTime) pending.add(s[j].timeKey);
+            break;
+          }
+          below = Math.floor((below - dur) / 5) * 5;
+          times[s[i].timeKey] = toStr(below);
+        }
+      }
+      return { times, pending };
+    };
+
+    // まずキャッシュだけで計算 → 揃っている列（＝変更のない列）は即表示。
+    // 足りない列のマスだけ「計算中」になる
+    const durations: Record<string, number> = { ...travelCache };
+    const init = computeAll(durations);
+    setPickupTimes(pt => ({ ...pt, ...init.times }));
+    setLoadingTimes(new Set(init.pending));
+    if (needed.size === 0) return;
+
     const apiKey = import.meta.env.VITE_ORS_API_KEY as string;
     // この実行の世代番号。データ変更で新しい計算が始まったら古いループは即終了（多重リクエスト防止）
     const gen = ++calcGenRef.current;
 
     (async () => {
       // 不足区間を直列で取得。ORS無料枠は40回/分なので1.6秒間隔で消化する
-      const durations: Record<string, number> = { ...travelCache };
       for (const [key, leg] of needed) {
         if (calcGenRef.current !== gen) return; // 新しい計算が始まった
         let mins: number | null = null;
@@ -204,50 +246,26 @@ export function WeeklySchedule() {
         }
         if (mins !== null) {
           durations[key] = mins;
-          // 取れた区間から順次キャッシュ保存（途中中断してもやり直しが減る）
           const m = mins;
           setTravelCache(c => ({ ...c, [key]: m }));
+          // 区間が1つ取れるたびに、揃った列から順次表示していく
+          const step = computeAll(durations);
+          setPickupTimes(pt => ({ ...pt, ...step.times }));
+          setLoadingTimes(new Set(step.pending));
         }
         // レート制限内に収める間隔
         await new Promise(res => setTimeout(res, 1600));
       }
       if (calcGenRef.current !== gen) return;
-      setTravelCache(c => ({ ...c, ...durations }));
 
-      // 下から上へ連鎖計算（各段で5分切り下げ）
-      const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
-      const toStr = (min: number) => {
-        const m = ((min % 1440) + 1440) % 1440;
-        return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
-      };
-      const newTimes: Record<string, string> = {};
-      for (const chain of chains) {
-        const s = chain.stops;
-        let below = toMin(chain.arrival); // 直下の基準時刻（最後尾は到着時刻）
-        for (let i = s.length - 1; i >= 0; i--) {
-          // 手動設定があれば最優先。上の人はこの時間を基準に連鎖する
-          if (s[i].manualTime) {
-            newTimes[s[i].timeKey] = s[i].manualTime!;
-            below = toMin(s[i].manualTime!);
-            continue;
-          }
-          const from = s[i].loc;
-          if (!from) break; // 座標なし → その人と上は計算不能
-          const isLast = i === s.length - 1;
-          const to = isLast ? null : s[i + 1].loc;
-          if (!isLast && !to) break;
-          const dur = durations[legKey(from, to)];
-          if (dur === undefined) { newTimes[s[i].timeKey] = 'ERR'; break; }
-          below = Math.floor((below - dur) / 5) * 5;
-          newTimes[s[i].timeKey] = toStr(below);
-        }
-      }
-      setPickupTimes(pt => ({ ...pt, ...newTimes }));
-      setLoadingTimes(prev => {
-        const n = new Set(prev);
-        newLoading.forEach(k => n.delete(k));
+      // 最後まで取得できなかったマスはエラー表示
+      const final = computeAll(durations);
+      setPickupTimes(pt => {
+        const n = { ...pt, ...final.times };
+        final.pending.forEach(k => { n[k] = 'ERR'; });
         return n;
       });
+      setLoadingTimes(new Set());
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
