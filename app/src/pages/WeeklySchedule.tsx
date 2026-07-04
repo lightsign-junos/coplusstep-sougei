@@ -30,9 +30,9 @@ export function WeeklySchedule() {
   } = useDataStore();
 
   const allActiveVehicles = vehicles.filter(v => v.active);
-  // ヴェルはデフォルト非表示（必要な時だけ「+ヴェルを表示」で表示）。
-  // ただしその週にヴェルへの配置が既にあれば自動で表示する（配置が見えなくなる事故を防ぐ）
-  const [showVel, setShowVel] = useState(false);
+  // ヴェルは曜日ごとにデフォルト非表示（必要な曜日だけ「+ヴェル」で表示）。
+  // その曜日にヴェルへの配置が既にあれば自動で表示する（配置が見えなくなる事故を防ぐ）
+  const [shownVelDays, setShownVelDays] = useState<Set<string>>(new Set());
 
   const [weekBase, setWeekBase] = useState(new Date());
   const [copyToast, setCopyToast] = useState(false);
@@ -72,11 +72,22 @@ export function WeeklySchedule() {
   const weekStart = startOfWeek(weekBase, { weekStartsOn: 1 });
   const weekKey = format(weekStart, 'yyyy-MM-dd');
 
-  // その週に既にヴェルへ配置がある場合は自動で表示する
-  const velHasPlacement = allActiveVehicles
-    .filter(v => v.color === 'vel')
-    .some(v => weeklyDayOverrides.some(o => o.weekKey === weekKey && o.vehicleId === v.id && o.type === 'add'));
-  const activeVehicles = allActiveVehicles.filter(v => v.color !== 'vel' || showVel || velHasPlacement);
+  // その曜日に既にヴェルへ配置がある場合は自動で表示する
+  const velHasPlacementOnDay = (dayLabel: string) =>
+    allActiveVehicles
+      .filter(v => v.color === 'vel')
+      .some(v => weeklyDayOverrides.some(o => o.weekKey === weekKey && o.vehicleId === v.id && o.dayLabel === dayLabel && o.type === 'add'));
+  const velVisibleOnDay = (dayLabel: string) => shownVelDays.has(dayLabel) || velHasPlacementOnDay(dayLabel);
+  const vehiclesForDay = (dayLabel: string) =>
+    allActiveVehicles.filter(v => v.color !== 'vel' || velVisibleOnDay(dayLabel));
+  const toggleVelDay = (dayLabel: string) => {
+    setShownVelDays(prev => {
+      const next = new Set(prev);
+      if (next.has(dayLabel)) next.delete(dayLabel);
+      else next.add(dayLabel);
+      return next;
+    });
+  };
 
   // 事業所（昭和島教室）〒143-0004 東京都大田区昭和島1-2-8
   const FACILITY_LAT = 35.5702778;
@@ -119,7 +130,7 @@ export function WeeklySchedule() {
     const chains: { arrival: string; stops: ChainStop[] }[] = [];
     const newNoCoord = new Set<string>();
 
-    for (const v of activeVehicles) {
+    for (const v of allActiveVehicles) {
       const route = goRoutes.find(r => r.vehicleId === v.id);
       if (!route) continue;
       for (const d of WEEK_DAYS) {
@@ -340,7 +351,6 @@ export function WeeklySchedule() {
   };
 
   const maxRows = 7;
-  const numVehicles = activeVehicles.length;
 
   const handleAdd = (memberId: string) => {
     if (!picking) return;
@@ -425,7 +435,7 @@ export function WeeklySchedule() {
     return { scheduled, others, dateStr };
   };
 
-  const pickingVehicle = picking ? activeVehicles.find(v => v.id === picking.vehicleId) : null;
+  const pickingVehicle = picking ? allActiveVehicles.find(v => v.id === picking.vehicleId) : null;
   const editingRoute = editingStaff ? goRoutes.find(r => r.vehicleId === editingStaff.vehicleId) : null;
 
   return (
@@ -446,16 +456,6 @@ export function WeeklySchedule() {
           >
             今週リセット
           </button>
-          {allActiveVehicles.some(v => v.color === 'vel') && !velHasPlacement && (
-            <button
-              onClick={() => setShowVel(v => !v)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg cursor-pointer transition-colors border ${
-                showVel ? 'bg-gray-800 text-white border-gray-800' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              <Plus size={13} /> {showVel ? 'ヴェルを隠す' : 'ヴェルを表示'}
-            </button>
-          )}
           <button onClick={() => setWeekBase(w => subWeeks(w, 1))} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
             <ChevronLeft size={16} />
           </button>
@@ -507,24 +507,38 @@ export function WeeklySchedule() {
                   <th className="border border-gray-300 bg-gray-100 px-2 py-2 text-center text-xs font-semibold text-gray-600 w-14" rowSpan={5}>
                     お迎え
                   </th>
-                  {weekDates.map(d => (
+                  {weekDates.map(d => {
+                    const velVisible = velVisibleOnDay(d.label);
+                    const velPlaced = velHasPlacementOnDay(d.label);
+                    return (
                     <th
                       key={d.label}
-                      colSpan={numVehicles}
+                      colSpan={vehiclesForDay(d.label).length}
                       onClick={() => navigate(`/dashboard?date=${d.dateStr}`)}
-                      className={`border border-gray-300 px-2 py-2 text-center font-bold text-sm cursor-pointer select-none transition-colors ${
+                      className={`relative border border-gray-300 px-2 py-2 text-center font-bold text-sm cursor-pointer select-none transition-colors ${
                         d.dateStr === today ? 'bg-pink-100 text-pink-700 hover:bg-pink-200'
                         : d.label === '土' ? 'bg-blue-50 text-blue-700 hover:bg-blue-100'
                         : 'bg-gray-50 text-gray-800 hover:bg-gray-100'
                       }`}
                     >
                       {format(d.date, 'M/d', { locale: ja })}（{d.label}）
+                      {!velPlaced && (
+                        <button
+                          onClick={e => { e.stopPropagation(); toggleVelDay(d.label); }}
+                          className={`no-print block mx-auto mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium cursor-pointer transition-colors ${
+                            velVisible ? 'bg-gray-700 text-white hover:bg-gray-600' : 'bg-white/70 text-gray-500 hover:bg-white'
+                          }`}
+                        >
+                          {velVisible ? '－ヴェル' : '＋ヴェル'}
+                        </button>
+                      )}
                     </th>
-                  ))}
+                    );
+                  })}
                 </tr>
                 <tr>
                   {weekDates.flatMap(d =>
-                    activeVehicles.map(v => {
+                    vehiclesForDay(d.label).map(v => {
                       const route = goRoutes.find(r => r.vehicleId === v.id);
                       return (
                         <th key={`veh-${d.label}-${v.id}`} className={`border border-gray-300 px-2 py-1.5 text-center text-xs font-bold text-white vehicle-${v.color}-header`}>
@@ -541,7 +555,7 @@ export function WeeklySchedule() {
                 </tr>
                 <tr className="bg-gray-50">
                   {weekDates.flatMap(d =>
-                    activeVehicles.map(v => {
+                    vehiclesForDay(d.label).map(v => {
                       const route = goRoutes.find(r => r.vehicleId === v.id);
                       return (
                         <td key={`drv-${d.label}-${v.id}`} className="border border-gray-300 px-2 py-1 text-center text-xs text-gray-700">
@@ -558,7 +572,7 @@ export function WeeklySchedule() {
                 </tr>
                 <tr className="bg-gray-50">
                   {weekDates.flatMap(d =>
-                    activeVehicles.map(v => {
+                    vehiclesForDay(d.label).map(v => {
                       const route = goRoutes.find(r => r.vehicleId === v.id);
                       return (
                         <td key={`att-${d.label}-${v.id}`} className="border border-gray-300 px-2 py-1 text-center text-xs text-gray-700">
@@ -575,12 +589,13 @@ export function WeeklySchedule() {
                 </tr>
                 <tr className="bg-gray-50">
                   {weekDates.map(d => {
-                    const total = activeVehicles.reduce((sum, v) => {
+                    const dayVehicles = vehiclesForDay(d.label);
+                    const total = dayVehicles.reduce((sum, v) => {
                       const { presentCount } = getDayVehicleData(d.dateStr, d.label, v.id);
                       return sum + presentCount;
                     }, 0);
                     return (
-                      <td key={`total-${d.label}`} colSpan={numVehicles} className={`border border-gray-300 px-2 py-1 text-center text-xs font-semibold ${d.dateStr === today ? 'bg-pink-50 text-pink-700' : 'text-gray-700'}`}>
+                      <td key={`total-${d.label}`} colSpan={dayVehicles.length} className={`border border-gray-300 px-2 py-1 text-center text-xs font-semibold ${d.dateStr === today ? 'bg-pink-50 text-pink-700' : 'text-gray-700'}`}>
                         合計 {total} 名
                       </td>
                     );
@@ -592,7 +607,7 @@ export function WeeklySchedule() {
                   <tr key={rowIdx} style={{height: '52px'}} className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/60'}>
                     <td className="border border-gray-300 bg-gray-50 px-1 py-1 text-center text-xs text-gray-400 w-14">{rowIdx + 1}</td>
                     {weekDates.flatMap(d =>
-                      activeVehicles.map(v => {
+                      vehiclesForDay(d.label).map(v => {
                         const { route, placed } = getDayVehicleData(d.dateStr, d.label, v.id);
                         const p = placed.find(x => x.row === rowIdx);
                         const member = p ? getMember(p.memberId) : null;
