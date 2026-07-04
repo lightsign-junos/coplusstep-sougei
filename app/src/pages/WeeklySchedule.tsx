@@ -30,7 +30,9 @@ export function WeeklySchedule() {
   } = useDataStore();
 
   const allActiveVehicles = vehicles.filter(v => v.active);
-  const activeVehicles = allActiveVehicles;
+  // ヴェルはデフォルト非表示（必要な時だけ「+ヴェルを表示」で表示）。
+  // ただしその週にヴェルへの配置が既にあれば自動で表示する（配置が見えなくなる事故を防ぐ）
+  const [showVel, setShowVel] = useState(false);
 
   const [weekBase, setWeekBase] = useState(new Date());
   const [copyToast, setCopyToast] = useState(false);
@@ -69,6 +71,12 @@ export function WeeklySchedule() {
   // weekKeyをuseEffectより先に定義（TDZ回避）
   const weekStart = startOfWeek(weekBase, { weekStartsOn: 1 });
   const weekKey = format(weekStart, 'yyyy-MM-dd');
+
+  // その週に既にヴェルへ配置がある場合は自動で表示する
+  const velHasPlacement = allActiveVehicles
+    .filter(v => v.color === 'vel')
+    .some(v => weeklyDayOverrides.some(o => o.weekKey === weekKey && o.vehicleId === v.id && o.type === 'add'));
+  const activeVehicles = allActiveVehicles.filter(v => v.color !== 'vel' || showVel || velHasPlacement);
 
   // 事業所（昭和島教室）〒143-0004 東京都大田区昭和島1-2-8
   const FACILITY_LAT = 35.5702778;
@@ -438,6 +446,16 @@ export function WeeklySchedule() {
           >
             今週リセット
           </button>
+          {allActiveVehicles.some(v => v.color === 'vel') && !velHasPlacement && (
+            <button
+              onClick={() => setShowVel(v => !v)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg cursor-pointer transition-colors border ${
+                showVel ? 'bg-gray-800 text-white border-gray-800' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <Plus size={13} /> {showVel ? 'ヴェルを隠す' : 'ヴェルを表示'}
+            </button>
+          )}
           <button onClick={() => setWeekBase(w => subWeeks(w, 1))} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
             <ChevronLeft size={16} />
           </button>
