@@ -130,6 +130,8 @@ interface DataState {
   addWeeklyDayOverride: (override: WeeklyDayOverride) => void;
   removeWeeklyDayOverride: (id: string) => void;
   clearWeekOverrides: (weekKey: string) => void;
+  // 週次一覧の乗車時間の手動設定（null で自動計算に戻す）
+  setWeeklyOverrideTime: (id: string, time: string | null) => void;
 
   // 利用者シフトの出欠
   markShiftAbsent: (date: string, memberId: string) => void;
@@ -385,6 +387,11 @@ export const useDataStore = create<DataState>()(
       })),
       removeWeeklyDayOverride: (id) => set(s => ({ weeklyDayOverrides: s.weeklyDayOverrides.filter(x => x.id !== id) })),
       clearWeekOverrides: (weekKey) => set(s => ({ weeklyDayOverrides: s.weeklyDayOverrides.filter(x => x.weekKey !== weekKey) })),
+      setWeeklyOverrideTime: (id, time) => set(s => ({
+        weeklyDayOverrides: s.weeklyDayOverrides.map(o =>
+          o.id === id ? { ...o, manualTime: time ?? undefined } : o
+        ),
+      })),
 
       setVelEnabled: (weekStart, enabled) => set(s => ({ velWeeks: { ...s.velWeeks, [weekStart]: enabled } })),
       isVelEnabled: (weekStart) => get().velWeeks[weekStart] ?? false,

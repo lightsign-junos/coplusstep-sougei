@@ -126,4 +126,5 @@ export interface WeeklyDayOverride {
   dayLabel: string;   // '月'〜'土'
   type: 'add' | 'remove';
   row?: number;       // 週次一覧のマス位置（0始まり）。マスは独立していて他の配置に影響されない
+  manualTime?: string; // 手動設定した乗車時間 "HH:MM"。設定時は自動計算より優先され、上の人の連鎖計算の基準になる
 }

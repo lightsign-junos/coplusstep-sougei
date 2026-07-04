@@ -26,7 +26,7 @@ export function WeeklySchedule() {
     vehicles, routes, routeStops, members, memberLocations, staff, dailyOverrides, weeklyDayOverrides,
     addRouteStop, deleteRouteStop,
     updateRoute, addWeeklyDayOverride, removeWeeklyDayOverride, clearWeekOverrides,
-    shiftExtras, addShiftExtra,
+    shiftExtras, addShiftExtra, setWeeklyOverrideTime,
   } = useDataStore();
 
   const allActiveVehicles = vehicles.filter(v => v.active);
@@ -36,6 +36,9 @@ export function WeeklySchedule() {
   const [copyToast, setCopyToast] = useState(false);
   const [picking, setPicking] = useState<{ dayLabel: string; vehicleId: string; rowIdx: number } | null>(null);
   const [editingStaff, setEditingStaff] = useState<{ vehicleId: string; field: 'driverId' | 'attendantId' } | null>(null);
+  // 乗車時間の手動編集モーダル
+  const [editingTime, setEditingTime] = useState<{ overrideId: string; memberName: string; current: string; isManual: boolean } | null>(null);
+  const [timeInput, setTimeInput] = useState('');
   // 乗車時間計算: key="dayLabel-vehicleId-memberId" → "HH:MM"
   const [pickupTimes, setPickupTimes] = useState<Record<string, string>>({});
   // ORS結果キャッシュ: key="区間" → 分。座標が変わらない限り再取得不要なのでlocalStorageに永続化
@@ -99,7 +102,7 @@ export function WeeklySchedule() {
   // その上の人: 下の人の乗車時間 −（上の人の場所→下の人の場所）… を上へ連鎖
   useEffect(() => {
     type Point = { lat: number; lng: number };
-    type ChainStop = { memberId: string; timeKey: string; loc: Point | null };
+    type ChainStop = { memberId: string; timeKey: string; loc: Point | null; manualTime?: string };
     const chains: { arrival: string; stops: ChainStop[] }[] = [];
     const newNoCoord = new Set<string>();
     const newLoading = new Set<string>();
@@ -120,11 +123,12 @@ export function WeeklySchedule() {
           );
           const timeKey = `${d.label}-${v.id}-${o.memberId}`;
           if (!loc || loc.lat == null || loc.lng == null) {
-            newNoCoord.add(timeKey);
-            return { memberId: o.memberId, timeKey, loc: null };
+            // 手動時間があれば座標なしでも表示できる
+            if (!o.manualTime) newNoCoord.add(timeKey);
+            return { memberId: o.memberId, timeKey, loc: null, manualTime: o.manualTime };
           }
-          newLoading.add(timeKey);
-          return { memberId: o.memberId, timeKey, loc: { lat: loc.lat, lng: loc.lng } };
+          if (!o.manualTime) newLoading.add(timeKey);
+          return { memberId: o.memberId, timeKey, loc: { lat: loc.lat, lng: loc.lng }, manualTime: o.manualTime };
         });
         chains.push({ arrival: route.arrivalTime, stops });
       }
@@ -218,6 +222,12 @@ export function WeeklySchedule() {
         const s = chain.stops;
         let below = toMin(chain.arrival); // 直下の基準時刻（最後尾は到着時刻）
         for (let i = s.length - 1; i >= 0; i--) {
+          // 手動設定があれば最優先。上の人はこの時間を基準に連鎖する
+          if (s[i].manualTime) {
+            newTimes[s[i].timeKey] = s[i].manualTime!;
+            below = toMin(s[i].manualTime!);
+            continue;
+          }
           const from = s[i].loc;
           if (!from) break; // 座標なし → その人と上は計算不能
           const isLast = i === s.length - 1;
@@ -239,7 +249,7 @@ export function WeeklySchedule() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     weekKey,
-    weeklyDayOverrides.map(o => `${o.id}-${o.type}-${o.row ?? ''}`).join(),
+    weeklyDayOverrides.map(o => `${o.id}-${o.type}-${o.row ?? ''}-${o.manualTime ?? ''}`).join(),
     memberLocations.map(l => `${l.id}-${l.lat}-${l.lng}`).join(),
     routes.map(r => `${r.id}-${r.arrivalTime}`).join(),
   ]);
@@ -264,23 +274,23 @@ export function WeeklySchedule() {
 
   // マス位置はオーバーライドのrowに記録（マスは完全に独立。他の配置に影響しない）
   // rowを持たない古いデータは空いている行へ順に割り当てる
-  const getPlacements = (dayLabel: string, vehicleId: string): { memberId: string; row: number }[] => {
+  const getPlacements = (dayLabel: string, vehicleId: string): { id: string; memberId: string; row: number; manualTime?: string }[] => {
     const ovs = weeklyDayOverrides.filter(
       o => o.weekKey === weekKey && o.vehicleId === vehicleId && o.dayLabel === dayLabel && o.type === 'add'
     );
     const used = new Set(ovs.filter(o => o.row != null).map(o => o.row as number));
     let next = 0;
     return ovs.map(o => {
-      if (o.row != null) return { memberId: o.memberId, row: o.row };
+      if (o.row != null) return { id: o.id, memberId: o.memberId, row: o.row, manualTime: o.manualTime };
       while (used.has(next)) next++;
       used.add(next);
-      return { memberId: o.memberId, row: next++ };
+      return { id: o.id, memberId: o.memberId, row: next++, manualTime: o.manualTime };
     });
   };
 
   const getDayVehicleData = (dateStr: string, dayLabel: string, vehicleId: string) => {
     const route = goRoutes.find(r => r.vehicleId === vehicleId);
-    if (!route) return { route: null, placed: [] as { memberId: string; row: number }[], presentCount: 0, bottomMemberId: null as string | null };
+    if (!route) return { route: null, placed: [] as ReturnType<typeof getPlacements>, presentCount: 0, bottomMemberId: null as string | null };
     const placed = getPlacements(dayLabel, vehicleId);
     const presentCount = placed.filter(p => !isAbsent(dateStr, p.memberId, route.id)).length;
     const bottomMemberId = placed.length > 0
@@ -549,7 +559,19 @@ export function WeeklySchedule() {
                                     {displayName(member)}<span className="print-sama text-[10px] text-gray-500 ml-0.5">様</span>
                                   </div>
                                   {pickupTime && pickupTime !== 'ERR' && (
-                                    <div className="text-[11px] font-mono font-semibold mt-0.5 text-blue-600">{pickupTime}</div>
+                                    <button
+                                      onClick={e => {
+                                        e.stopPropagation();
+                                        setTimeInput(pickupTime);
+                                        setEditingTime({ overrideId: p!.id, memberName: displayName(member), current: pickupTime, isManual: !!p!.manualTime });
+                                      }}
+                                      className={`text-[11px] font-mono font-semibold mt-0.5 cursor-pointer hover:underline ${
+                                        p!.manualTime ? 'text-orange-600' : 'text-blue-600'
+                                      }`}
+                                      title="クリックで時間を手動設定"
+                                    >
+                                      {pickupTime}{p!.manualTime && <span className="text-[9px] ml-0.5 no-print">手</span>}
+                                    </button>
                                   )}
                                   {pickupTime === 'ERR' && (
                                     <div className="text-[10px] text-red-500 mt-0.5">API失敗</div>
@@ -557,8 +579,18 @@ export function WeeklySchedule() {
                                   {isLoadingTime && !pickupTime && (
                                     <div className="text-[10px] text-gray-400 mt-0.5">計算中...</div>
                                   )}
-                                  {isNoCoord && (
-                                    <div className="text-[10px] text-orange-500 mt-0.5">座標なし</div>
+                                  {isNoCoord && !pickupTime && (
+                                    <button
+                                      onClick={e => {
+                                        e.stopPropagation();
+                                        setTimeInput('10:30');
+                                        setEditingTime({ overrideId: p!.id, memberName: displayName(member), current: '', isManual: false });
+                                      }}
+                                      className="text-[10px] text-orange-500 mt-0.5 cursor-pointer hover:underline"
+                                      title="クリックで時間を手動設定"
+                                    >
+                                      座標なし
+                                    </button>
                                   )}
                                   <button
                                     onClick={e => { e.stopPropagation(); handleRemove(member.id, d.label, v.id); }}
@@ -642,6 +674,62 @@ export function WeeklySchedule() {
               </div>
             );
           })()}
+        </Modal>
+      )}
+
+      {/* 乗車時間の手動編集モーダル */}
+      {editingTime && (
+        <Modal
+          title={`${editingTime.memberName}様の乗車時間`}
+          onClose={() => setEditingTime(null)}
+          size="sm"
+        >
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">乗車時間</label>
+              <input
+                type="time"
+                value={timeInput}
+                onChange={e => setTimeInput(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pink-300"
+              />
+              <p className="text-xs text-gray-400 mt-2 leading-relaxed">
+                手動で設定すると、この時間を基準に<span className="font-semibold text-gray-600">上のマスの利用者の時間が自動で再計算</span>されます。
+              </p>
+            </div>
+            <div className="flex gap-2 justify-between pt-2 border-t border-gray-100">
+              <button
+                onClick={() => {
+                  setWeeklyOverrideTime(editingTime.overrideId, null);
+                  setEditingTime(null);
+                }}
+                disabled={!editingTime.isManual}
+                className="px-3 py-2 text-xs text-gray-500 hover:bg-gray-100 rounded-lg cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                自動計算に戻す
+              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setEditingTime(null)}
+                  className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg cursor-pointer"
+                >
+                  キャンセル
+                </button>
+                <button
+                  onClick={() => {
+                    if (/^\d{2}:\d{2}$/.test(timeInput)) {
+                      setWeeklyOverrideTime(editingTime.overrideId, timeInput);
+                      setEditingTime(null);
+                    }
+                  }}
+                  disabled={!/^\d{2}:\d{2}$/.test(timeInput)}
+                  className="px-4 py-2 text-sm bg-pink-500 text-white rounded-lg hover:bg-pink-600 cursor-pointer disabled:opacity-50"
+                >
+                  保存
+                </button>
+              </div>
+            </div>
+          </div>
         </Modal>
       )}
 
