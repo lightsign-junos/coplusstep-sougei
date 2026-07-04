@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format, startOfWeek, addDays, addWeeks, subWeeks } from 'date-fns';
 import { ja } from 'date-fns/locale';
@@ -38,8 +38,21 @@ export function WeeklySchedule() {
   const [editingStaff, setEditingStaff] = useState<{ vehicleId: string; field: 'driverId' | 'attendantId' } | null>(null);
   // 乗車時間計算: key="dayLabel-vehicleId-memberId" → "HH:MM"
   const [pickupTimes, setPickupTimes] = useState<Record<string, string>>({});
-  // ORS結果キャッシュ: key="lat,lng" → 分
-  const [travelCache, setTravelCache] = useState<Record<string, number>>({});
+  // ORS結果キャッシュ: key="区間" → 分。座標が変わらない限り再取得不要なのでlocalStorageに永続化
+  const [travelCache, setTravelCache] = useState<Record<string, number>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('coplus-travel-cache') ?? '{}');
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('coplus-travel-cache', JSON.stringify(travelCache));
+    } catch { /* 容量超過時は諦める */ }
+  }, [travelCache]);
+  // 計算ループの世代管理（データ変更で新ループが始まったら古いループを止める＝多重リクエスト防止）
+  const calcGenRef = useRef(0);
   // 計算中のkey
   const [loadingTimes, setLoadingTimes] = useState<Set<string>>(new Set());
   // 座標なしのmemberId
@@ -146,19 +159,29 @@ export function WeeklySchedule() {
     }
 
     const apiKey = import.meta.env.VITE_ORS_API_KEY as string;
+    // この実行の世代番号。データ変更で新しい計算が始まったら古いループは即終了（多重リクエスト防止）
+    const gen = ++calcGenRef.current;
 
     (async () => {
-      // 不足区間を直列で取得（レート制限対策・自動リトライ）
+      // 不足区間を直列で取得。ORS無料枠は40回/分なので1.6秒間隔で消化する
       const durations: Record<string, number> = { ...travelCache };
       for (const [key, leg] of needed) {
+        if (calcGenRef.current !== gen) return; // 新しい計算が始まった
         let mins: number | null = null;
         const endLng = leg.to ? leg.to.lng : FACILITY_LNG;
         const endLat = leg.to ? leg.to.lat : FACILITY_LAT;
         for (let attempt = 0; attempt < 3 && mins === null; attempt++) {
+          if (calcGenRef.current !== gen) return;
           try {
             const r = await fetch(
               `https://api.openrouteservice.org/v2/directions/driving-car?api_key=${apiKey}&start=${leg.from.lng},${leg.from.lat}&end=${endLng},${endLat}`
             );
+            if (r.status === 429 || r.status === 403) {
+              // レート制限: 待ってからリトライ
+              console.warn('[ORS] rate limited, waiting...', key);
+              await new Promise(res => setTimeout(res, 15000 * (attempt + 1)));
+              continue;
+            }
             if (!r.ok) throw new Error(`HTTP ${r.status}`);
             const data: { features: { properties: { summary: { duration: number; distance: number } } }[] } = await r.json();
             const sum = data.features[0].properties.summary;
@@ -169,12 +192,19 @@ export function WeeklySchedule() {
             mins = Math.ceil(Math.max(orsMins, realisticMins));
           } catch (e) {
             console.error('[ORS] API error (attempt', attempt + 1, '):', e, key);
-            await new Promise(res => setTimeout(res, 1000 * (attempt + 1)));
+            await new Promise(res => setTimeout(res, 2000 * (attempt + 1)));
           }
         }
-        if (mins !== null) durations[key] = mins;
-        await new Promise(res => setTimeout(res, 250));
+        if (mins !== null) {
+          durations[key] = mins;
+          // 取れた区間から順次キャッシュ保存（途中中断してもやり直しが減る）
+          const m = mins;
+          setTravelCache(c => ({ ...c, [key]: m }));
+        }
+        // レート制限内に収める間隔
+        await new Promise(res => setTimeout(res, 1600));
       }
+      if (calcGenRef.current !== gen) return;
       setTravelCache(c => ({ ...c, ...durations }));
 
       // 下から上へ連鎖計算（各段で5分切り下げ）
