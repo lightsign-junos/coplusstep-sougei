@@ -681,7 +681,10 @@ export function WeeklySchedule() {
                                     size={11}
                                     className="absolute -left-1 top-1/2 -translate-y-1/2 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity no-print"
                                   />
-                                  <div className="cell-name font-medium text-gray-800 text-[14px] leading-tight whitespace-nowrap truncate text-center">
+                                  {/* 同姓判別の読み仮名（例：佐々木た）が省略記号で消えないよう、長い名前は縮小して必ず全部表示する */}
+                                  <div className={`cell-name font-medium text-gray-800 leading-tight whitespace-nowrap text-center overflow-hidden ${
+                                    displayName(member).length >= 4 ? 'text-[11px]' : 'text-[14px]'
+                                  }`}>
                                     {displayName(member)}<span className="print-sama text-[10px] text-gray-500 ml-0.5">様</span>
                                   </div>
                                   {pickupTime && pickupTime !== 'ERR' && (
