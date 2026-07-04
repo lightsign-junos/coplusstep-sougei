@@ -504,35 +504,48 @@ export function WeeklySchedule() {
             <table className="w-full text-xs border-collapse table-fixed" style={{ height: '100%' }}>
               <thead>
                 <tr>
-                  <th className="border border-gray-300 bg-gray-100 px-2 py-2 text-center text-xs font-semibold text-gray-600 w-14" rowSpan={5}>
+                  <th className="border border-gray-300 bg-gray-100 px-2 py-2 text-center text-xs font-semibold text-gray-600 w-14" rowSpan={6}>
                     お迎え
                   </th>
                   {weekDates.map(d => {
-                    const velVisible = velVisibleOnDay(d.label);
-                    const velPlaced = velHasPlacementOnDay(d.label);
                     return (
                     <th
                       key={d.label}
                       colSpan={vehiclesForDay(d.label).length}
                       onClick={() => navigate(`/dashboard?date=${d.dateStr}`)}
-                      className={`relative border border-gray-300 px-2 py-2 text-center font-bold text-sm cursor-pointer select-none transition-colors ${
+                      className={`border border-gray-300 px-2 py-2 text-center font-bold text-sm cursor-pointer select-none transition-colors ${
                         d.dateStr === today ? 'bg-pink-100 text-pink-700 hover:bg-pink-200'
                         : d.label === '土' ? 'bg-blue-50 text-blue-700 hover:bg-blue-100'
                         : 'bg-gray-50 text-gray-800 hover:bg-gray-100'
                       }`}
                     >
                       {format(d.date, 'M/d', { locale: ja })}（{d.label}）
-                      {!velPlaced && (
-                        <button
-                          onClick={e => { e.stopPropagation(); toggleVelDay(d.label); }}
-                          className={`no-print block mx-auto mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium cursor-pointer transition-colors ${
-                            velVisible ? 'bg-gray-700 text-white hover:bg-gray-600' : 'bg-white/70 text-gray-500 hover:bg-white'
-                          }`}
-                        >
-                          {velVisible ? '－ヴェル' : '＋ヴェル'}
-                        </button>
-                      )}
                     </th>
+                    );
+                  })}
+                </tr>
+                {/* ヴェル表示切替は日付見出しと別の行に分離（クリック領域の干渉防止） */}
+                <tr className="no-print">
+                  {weekDates.map(d => {
+                    const velVisible = velVisibleOnDay(d.label);
+                    const velPlaced = velHasPlacementOnDay(d.label);
+                    return (
+                      <td
+                        key={`veltoggle-${d.label}`}
+                        colSpan={vehiclesForDay(d.label).length}
+                        className="border border-gray-200 bg-gray-50 px-1 py-0.5 text-center"
+                      >
+                        {!velPlaced && (
+                          <button
+                            onClick={() => toggleVelDay(d.label)}
+                            className={`px-2 py-0.5 rounded text-[9px] font-medium cursor-pointer transition-colors ${
+                              velVisible ? 'bg-gray-700 text-white hover:bg-gray-600' : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-100'
+                            }`}
+                          >
+                            {velVisible ? '－ヴェル' : '＋ヴェル'}
+                          </button>
+                        )}
+                      </td>
                     );
                   })}
                 </tr>
