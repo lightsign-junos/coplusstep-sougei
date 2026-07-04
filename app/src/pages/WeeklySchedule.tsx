@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format, startOfWeek, addDays, addWeeks, subWeeks } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, Printer, Plus, Copy } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Printer, Plus, Copy, GripVertical } from 'lucide-react';
 import { useDataStore } from '../store/dataStore';
 import { getMemberDisplayName } from '../lib/memberDisplay';
 import { Modal } from '../components/common/Modal';
@@ -41,6 +41,7 @@ export function WeeklySchedule() {
   const [timeInput, setTimeInput] = useState('');
   // ドラッグ&ドロップ（同じ曜日×同じ車両の列内のみ）
   const [dragging, setDragging] = useState<{ overrideId: string; dayLabel: string; vehicleId: string; row: number } | null>(null);
+  const [dragOverRow, setDragOverRow] = useState<number | null>(null);
   // 乗車時間計算: key="dayLabel-vehicleId-memberId" → "HH:MM"
   const [pickupTimes, setPickupTimes] = useState<Record<string, string>>({});
   // ORS結果キャッシュ: key="区間" → 分。座標が変わらない限り再取得不要なのでlocalStorageに永続化
@@ -562,14 +563,30 @@ export function WeeklySchedule() {
                           <td
                             key={`cell-${d.label}-${v.id}-${rowIdx}`}
                             onClick={showAdd ? () => setPicking({ dayLabel: d.label, vehicleId: v.id, rowIdx }) : undefined}
-                            onDragOver={isDropTarget ? (e) => e.preventDefault() : undefined}
-                            onDrop={isDropTarget ? (e) => { e.preventDefault(); handleDropOnCell(d.label, v.id, rowIdx); } : undefined}
-                            className={`border border-gray-200 px-0 py-0 text-center align-middle min-w-[80px] ${isToday ? 'bg-pink-50/40' : ''} ${showAdd ? 'cursor-pointer hover:bg-gray-50' : ''} ${
-                              isDropTarget && dragging!.row !== rowIdx ? 'ring-2 ring-inset ring-pink-300 bg-pink-50/60' : ''
+                            onDragOver={isDropTarget ? (e) => { e.preventDefault(); if (dragOverRow !== rowIdx) setDragOverRow(rowIdx); } : undefined}
+                            onDragLeave={isDropTarget ? () => setDragOverRow(cur => (cur === rowIdx ? null : cur)) : undefined}
+                            onDrop={isDropTarget ? (e) => { e.preventDefault(); handleDropOnCell(d.label, v.id, rowIdx); setDragOverRow(null); } : undefined}
+                            className={`relative border border-gray-200 px-0 py-0 text-center align-middle min-w-[80px] transition-all duration-150 ${isToday ? 'bg-pink-50/40' : ''} ${showAdd && !dragging ? 'cursor-pointer hover:bg-gray-50' : ''} ${
+                              isDropTarget && dragging!.row !== rowIdx
+                                ? dragOverRow === rowIdx
+                                  ? 'ring-2 ring-inset ring-pink-500 bg-pink-100/80'
+                                  : 'ring-1 ring-inset ring-pink-200 bg-pink-50/50'
+                                : ''
                             }`}
                             style={{height: '52px', maxHeight: '52px', overflow: 'hidden'}}
                           >
-                            <div className="h-[52px] flex flex-col items-center justify-center px-2 overflow-hidden">
+                            {/* ドロップ先ラベル */}
+                            {isDropTarget && dragOverRow === rowIdx && dragging!.row !== rowIdx && (
+                              <span className="absolute inset-x-0 top-0.5 z-10 flex justify-center pointer-events-none no-print">
+                                <span className="text-[9px] font-bold text-white bg-pink-500 rounded-full px-2 py-px shadow">
+                                  {member ? '⇄ 入れ替え' : '↓ ここへ'}
+                                </span>
+                              </span>
+                            )}
+                            <div
+                              className="h-[52px] flex flex-col items-center justify-center px-2 overflow-hidden transition-opacity duration-150"
+                              style={{ opacity: dragging && !isDropTarget ? 0.25 : 1 }}
+                            >
                             {member ? (
                               absent ? (
                                 <div className="cell-line text-red-400">
@@ -578,17 +595,30 @@ export function WeeklySchedule() {
                                 </div>
                               ) : (
                                 <div
-                                  className={`cell-line group relative w-full cursor-grab active:cursor-grabbing ${
-                                    dragging?.overrideId === p!.id ? 'opacity-40' : ''
+                                  className={`cell-line group relative w-full cursor-grab active:cursor-grabbing transition-opacity ${
+                                    dragging?.overrideId === p!.id ? 'opacity-30' : ''
                                   }`}
                                   draggable
                                   onDragStart={(e) => {
                                     e.dataTransfer.setData('text/plain', '');
                                     e.dataTransfer.effectAllowed = 'move';
+                                    // 名前入りピルをドラッグゴーストにする
+                                    const ghost = document.createElement('div');
+                                    ghost.textContent = `${displayName(member)} 様`;
+                                    ghost.style.cssText =
+                                      'position:fixed;top:-100px;left:-100px;padding:6px 16px;background:#fff;border:2px solid #ec4899;border-radius:9999px;font-size:13px;font-weight:700;color:#1f2937;box-shadow:0 6px 16px rgba(236,72,153,.3);white-space:nowrap;';
+                                    document.body.appendChild(ghost);
+                                    e.dataTransfer.setDragImage(ghost, 40, 16);
+                                    setTimeout(() => ghost.remove(), 0);
                                     setDragging({ overrideId: p!.id, dayLabel: d.label, vehicleId: v.id, row: rowIdx });
                                   }}
-                                  onDragEnd={() => setDragging(null)}
+                                  onDragEnd={() => { setDragging(null); setDragOverRow(null); }}
                                 >
+                                  {/* つかめる印（ホバー時に表示） */}
+                                  <GripVertical
+                                    size={11}
+                                    className="absolute -left-1 top-1/2 -translate-y-1/2 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity no-print"
+                                  />
                                   <div className="font-medium text-gray-800 text-[14px] leading-tight whitespace-nowrap truncate text-center">
                                     {displayName(member)}<span className="print-sama text-[10px] text-gray-500 ml-0.5">様</span>
                                   </div>
