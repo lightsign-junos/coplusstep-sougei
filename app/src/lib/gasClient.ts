@@ -72,7 +72,7 @@ export async function gasGetAll(): Promise<GASData | null> {
     data.weeklyDayOverrides = (data.weeklyDayOverrides ?? []).map(o => ({
       ...o,
       weekKey: fixDate(o.weekKey),
-      row: o.row === '' || o.row == null ? undefined : Number(o.row),
+      row: (o.row as unknown) === '' || o.row == null ? undefined : Number(o.row),
       manualTime: o.manualTime || undefined,
     }));
     // 行き便の到着時刻は10:55固定
