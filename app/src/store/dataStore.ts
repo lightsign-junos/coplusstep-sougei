@@ -222,6 +222,7 @@ function scheduleGASSave() {
         routeStops: s.routeStops,
         dailyOverrides: s.dailyOverrides,
         allowedUsers: s.allowedUsers,
+        weeklyDayOverrides: s.weeklyDayOverrides,
         shiftAbsences: s.shiftAbsences,
         shiftExtras: s.shiftExtras,
         attendanceDaily: computeAttendanceDaily(s),
@@ -298,6 +299,7 @@ export const useDataStore = create<DataState>()(
               routeStops: data.routeStops ?? [],
               dailyOverrides: data.dailyOverrides ?? [],
               allowedUsers: data.allowedUsers?.length ? data.allowedUsers : get().allowedUsers,
+              weeklyDayOverrides: data.weeklyDayOverrides?.length ? data.weeklyDayOverrides : get().weeklyDayOverrides,
               shiftAbsences: data.shiftAbsences?.length ? data.shiftAbsences : get().shiftAbsences,
               shiftExtras: data.shiftExtras?.length ? data.shiftExtras : get().shiftExtras,
               gasLoaded: true,
@@ -485,6 +487,7 @@ useDataStore.subscribe((state, prev) => {
     state.routeStops !== prev.routeStops ||
     state.dailyOverrides !== prev.dailyOverrides ||
     state.allowedUsers !== prev.allowedUsers ||
+    state.weeklyDayOverrides !== prev.weeklyDayOverrides ||
     state.shiftAbsences !== prev.shiftAbsences ||
     state.shiftExtras !== prev.shiftExtras;
   if (changed) scheduleGASSave();

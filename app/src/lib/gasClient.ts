@@ -1,6 +1,6 @@
 import type {
   Member, MemberLocation, Staff, Vehicle,
-  Route, RouteStop, DailyOverride, AllowedUser,
+  Route, RouteStop, DailyOverride, AllowedUser, WeeklyDayOverride,
 } from '../types';
 
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbwPds7ghq7ZLFJ1VNfTtV7yucE9G24AOYpbh_Sbm1Hu1HNeaTZ606E_qI9fbL8sxlkH/exec';
@@ -14,6 +14,8 @@ export interface GASData {
   routeStops: RouteStop[];
   dailyOverrides: DailyOverride[];
   allowedUsers: AllowedUser[];
+  // 週次一覧の配置（曜日×車両ごとの利用者配置・手動時間）。他アカウント・他端末と共有するためドライブに保存
+  weeklyDayOverrides?: WeeklyDayOverride[];
   // 利用者シフト（出欠・振替）と日次稼働率レポート
   shiftAbsences?: { date: string; memberId: string }[];
   shiftExtras?: { date: string; memberId: string }[];
@@ -67,6 +69,12 @@ export async function gasGetAll(): Promise<GASData | null> {
     };
     data.shiftAbsences = (data.shiftAbsences ?? []).map(a => ({ ...a, date: fixDate(a.date) }));
     data.shiftExtras = (data.shiftExtras ?? []).map(e => ({ ...e, date: fixDate(e.date) }));
+    data.weeklyDayOverrides = (data.weeklyDayOverrides ?? []).map(o => ({
+      ...o,
+      weekKey: fixDate(o.weekKey),
+      row: o.row === '' || o.row == null ? undefined : Number(o.row),
+      manualTime: o.manualTime || undefined,
+    }));
     // 行き便の到着時刻は10:55固定
     data.routes = (data.routes ?? []).map(r =>
       r.direction === 'go' ? { ...r, arrivalTime: '10:55' } : r
