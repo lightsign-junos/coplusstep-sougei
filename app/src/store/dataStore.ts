@@ -270,33 +270,23 @@ export const useDataStore = create<DataState>()(
           }
           const hasData = (data.members?.length ?? 0) > 0 || (data.routes?.length ?? 0) > 0;
           if (hasData) {
-            // シートに列がない項目（nameKana等）はローカル保存値を引き継ぐ（GASロードで消さない）
-            const localMembers = get().members;
-            const mergedMembers = (data.members ?? []).map(gm => {
-              const local = localMembers.find(lm => lm.id === gm.id);
-              return {
-                ...gm,
-                nameKana: gm.nameKana || local?.nameKana || '',
-              };
-            });
-            // マスタ系はGASが空を返しても手元の値を維持（誤消去からの防御）
-            const nextVehicles = data.vehicles?.length ? data.vehicles : get().vehicles;
-            const nextRoutes = ensureGoRoutes(
-              data.routes?.length ? data.routes : get().routes,
-              nextVehicles
-            );
+            // このページはDriveの内容をそのまま映すスクリーンなので、
+            // 取得できたものはローカルの古い値と混ぜずGASの値をそのまま採用する
+            // （アカウント・端末が違っても常に同じ内容が表示されるようにする）
+            const nextVehicles = data.vehicles ?? [];
+            const nextRoutes = ensureGoRoutes(data.routes ?? [], nextVehicles);
             set({
-              members: mergedMembers.length ? mergedMembers : get().members,
-              memberLocations: data.memberLocations?.length ? data.memberLocations : get().memberLocations,
-              staff: data.staff?.length ? data.staff : get().staff,
+              members: data.members ?? [],
+              memberLocations: data.memberLocations ?? [],
+              staff: data.staff ?? [],
               vehicles: nextVehicles,
               routes: nextRoutes,
               routeStops: data.routeStops ?? [],
               dailyOverrides: data.dailyOverrides ?? [],
-              allowedUsers: data.allowedUsers?.length ? data.allowedUsers : get().allowedUsers,
-              weeklyDayOverrides: data.weeklyDayOverrides?.length ? data.weeklyDayOverrides : get().weeklyDayOverrides,
-              shiftAbsences: data.shiftAbsences?.length ? data.shiftAbsences : get().shiftAbsences,
-              shiftExtras: data.shiftExtras?.length ? data.shiftExtras : get().shiftExtras,
+              allowedUsers: data.allowedUsers ?? [],
+              weeklyDayOverrides: data.weeklyDayOverrides ?? [],
+              shiftAbsences: data.shiftAbsences ?? [],
+              shiftExtras: data.shiftExtras ?? [],
               gasLoaded: true,
             });
           } else {
