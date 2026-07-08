@@ -83,6 +83,9 @@ interface DataState {
   velWeeks: Record<string, boolean>; // weekStart -> enabled
   // GAS sync
   gasLoaded: boolean;
+  // GASから実データを取得・反映できた場合のみtrue。falseの間は自動保存を行わない
+  // （取得失敗・空応答時にローカルの古い値を書き戻して本番データを壊す事故を防ぐ）
+  gasSynced: boolean;
   syncStatus: 'idle' | 'saving' | 'saved' | 'error';
 
   // GAS sync action
@@ -211,7 +214,7 @@ function scheduleGASSave() {
   useDataStore.setState({ syncStatus: 'saving' });
   _gasDebounceTimer = setTimeout(async () => {
     const s = useDataStore.getState();
-    if (!s.gasLoaded) return;
+    if (!s.gasSynced) return;
     try {
       await gasSaveAll({
         members: s.members,
@@ -253,6 +256,7 @@ export const useDataStore = create<DataState>()(
       shiftExtras: [],
       velWeeks: {},
       gasLoaded: false,
+      gasSynced: false,
       syncStatus: 'idle' as const,
 
       initFromGAS: async () => {
@@ -262,8 +266,8 @@ export const useDataStore = create<DataState>()(
           const data = await gasGetAll();
           if (get().gasLoaded) return; // 二重実行の後着側は何もしない
           if (!data) {
-            // GAS取得失敗: ここでローカルデータを書き戻すと、たまたま初期シード値しか
-            // 持っていない端末が本番データを上書きしてしまう事故につながるため、何もしない
+            // GAS取得失敗: gasSyncedをtrueにしないことで自動保存を止め、
+            // 古い/不完全なローカルデータが後から本番を上書きする事故を防ぐ
             // （手元のデータで表示は継続し、次回起動時に再取得を試みる）
             set({ gasLoaded: true });
             return;
@@ -288,11 +292,11 @@ export const useDataStore = create<DataState>()(
               shiftAbsences: data.shiftAbsences ?? [],
               shiftExtras: data.shiftExtras ?? [],
               gasLoaded: true,
+              gasSynced: true,
             });
           } else {
-            // GASが空（初回セットアップ等）: ここで自動的にローカルデータを書き込むと、
-            // GASが一時的に不完全なデータを返した場合に本番データを誤って上書きする恐れがある。
-            // 手元のデータで表示し、書き込みは通常のユーザー操作による自動保存に任せる
+            // GASが空（初回セットアップ等）: gasSyncedはtrueにせず自動保存を止める。
+            // 本当に初回セットアップの場合は手動でのデータ投入が必要
             set({ gasLoaded: true });
           }
         } finally {
@@ -413,9 +417,9 @@ export const useDataStore = create<DataState>()(
     }),
     {
       name: 'coplus-step-data',
-      // gasLoaded / syncStatus は保存しない（毎回GASから最新データを読み込む）
+      // gasLoaded / gasSynced / syncStatus は保存しない（毎回GASから最新データを読み込む）
       partialize: (state) => {
-        const { gasLoaded: _g, syncStatus: _s, ...rest } = state as unknown as Record<string, unknown>;
+        const { gasLoaded: _g, gasSynced: _gs, syncStatus: _s, ...rest } = state as unknown as Record<string, unknown>;
         return rest;
       },
       onRehydrateStorage: () => (state) => {
@@ -455,9 +459,10 @@ export const useDataStore = create<DataState>()(
 
 // Auto-save to GAS on data changes (debounced 1.5s)
 useDataStore.subscribe((state, prev) => {
-  if (!state.gasLoaded) return;
+  // GASから実データを取得・反映できたセッションでのみ自動保存する
+  if (!state.gasSynced) return;
   // GAS読み込み直後のデータ置き換えは「変更」ではないので保存しない
-  if (!prev.gasLoaded) return;
+  if (!prev.gasSynced) return;
   const changed =
     state.members !== prev.members ||
     state.memberLocations !== prev.memberLocations ||
