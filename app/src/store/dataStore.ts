@@ -262,14 +262,9 @@ export const useDataStore = create<DataState>()(
           const data = await gasGetAll();
           if (get().gasLoaded) return; // 二重実行の後着側は何もしない
           if (!data) {
-            // GAS unavailable: seed GAS with current store data
-            const s = get();
-            await gasSaveAll({
-              members: s.members, memberLocations: s.memberLocations,
-              staff: s.staff, vehicles: s.vehicles, routes: s.routes,
-              routeStops: s.routeStops, dailyOverrides: s.dailyOverrides,
-              allowedUsers: s.allowedUsers,
-            });
+            // GAS取得失敗: ここでローカルデータを書き戻すと、たまたま初期シード値しか
+            // 持っていない端末が本番データを上書きしてしまう事故につながるため、何もしない
+            // （手元のデータで表示は継続し、次回起動時に再取得を試みる）
             set({ gasLoaded: true });
             return;
           }
@@ -305,14 +300,9 @@ export const useDataStore = create<DataState>()(
               gasLoaded: true,
             });
           } else {
-            // GAS is empty: push current store data to GAS
-            const s = get();
-            await gasSaveAll({
-              members: s.members, memberLocations: s.memberLocations,
-              staff: s.staff, vehicles: s.vehicles, routes: s.routes,
-              routeStops: s.routeStops, dailyOverrides: s.dailyOverrides,
-              allowedUsers: s.allowedUsers,
-            });
+            // GASが空（初回セットアップ等）: ここで自動的にローカルデータを書き込むと、
+            // GASが一時的に不完全なデータを返した場合に本番データを誤って上書きする恐れがある。
+            // 手元のデータで表示し、書き込みは通常のユーザー操作による自動保存に任せる
             set({ gasLoaded: true });
           }
         } finally {
