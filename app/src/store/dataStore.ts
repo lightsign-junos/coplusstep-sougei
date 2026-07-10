@@ -4,7 +4,7 @@ import type {
   Member, MemberLocation, Staff, Vehicle,
   Route, RouteStop, DailyOverride, AllowedUser, AuthUser, WeeklyDayOverride
 } from '../types';
-import { gasGetAll, gasSaveAll } from '../lib/gasClient';
+import { gasGetAll, gasSaveAll, gasSaveAllowedUsers } from '../lib/gasClient';
 
 const ADMIN_EMAIL = 'junnosuke.honda@lightsign.jp';
 
@@ -94,9 +94,11 @@ interface DataState {
   // Auth actions
   login: (user: AuthUser) => Promise<boolean>;
   logout: () => void;
-  addAllowedUser: (user: AllowedUser) => void;
-  updateAllowedUser: (email: string, patch: Partial<AllowedUser>) => void;
-  removeAllowedUser: (email: string) => void;
+  // ログイン許可の管理はセキュリティ操作なので、ドライブへ直接書き込み、
+  // 成功が確認できた場合のみ画面へ反映する（falseなら保存失敗）
+  addAllowedUser: (user: AllowedUser) => Promise<boolean>;
+  updateAllowedUser: (email: string, patch: Partial<AllowedUser>) => Promise<boolean>;
+  removeAllowedUser: (email: string) => Promise<boolean>;
 
   // Member actions
   addMember: (member: Member) => void;
@@ -224,7 +226,8 @@ function scheduleGASSave() {
         routes: s.routes,
         routeStops: s.routeStops,
         dailyOverrides: s.dailyOverrides,
-        allowedUsers: s.allowedUsers,
+        // allowedUsersは含めない: 古い画面の一括保存が最新の許可リストを
+        // 巻き戻さないよう、書き込みは管理者設定の直接保存に限定する
         weeklyDayOverrides: s.weeklyDayOverrides,
         shiftAbsences: s.shiftAbsences,
         shiftExtras: s.shiftExtras,
@@ -324,11 +327,32 @@ export const useDataStore = create<DataState>()(
       },
       logout: () => set({ currentUser: null }),
 
-      addAllowedUser: (user) => set(s => ({ allowedUsers: [...s.allowedUsers, user] })),
-      updateAllowedUser: (email, patch) => set(s => ({
-        allowedUsers: s.allowedUsers.map(u => u.email === email ? { ...u, ...patch } : u),
-      })),
-      removeAllowedUser: (email) => set(s => ({ allowedUsers: s.allowedUsers.filter(u => u.email !== email) })),
+      // 許可リストの変更は「ドライブの最新リストを取得 → 変更を適用 → ドライブへ書き込み →
+      // 成功したら画面反映」の順で行う。古い画面からの操作でも他の人の追加・削除を巻き戻さない
+      addAllowedUser: async (user) => {
+        const data = await gasGetAll();
+        const base = data?.allowedUsers?.length ? data.allowedUsers : get().allowedUsers;
+        const next = [...base.filter(u => u.email !== user.email), user];
+        const ok = await gasSaveAllowedUsers(next);
+        if (ok) set({ allowedUsers: next });
+        return ok;
+      },
+      updateAllowedUser: async (email, patch) => {
+        const data = await gasGetAll();
+        const base = data?.allowedUsers?.length ? data.allowedUsers : get().allowedUsers;
+        const next = base.map(u => u.email === email ? { ...u, ...patch } : u);
+        const ok = await gasSaveAllowedUsers(next);
+        if (ok) set({ allowedUsers: next });
+        return ok;
+      },
+      removeAllowedUser: async (email) => {
+        const data = await gasGetAll();
+        const base = data?.allowedUsers?.length ? data.allowedUsers : get().allowedUsers;
+        const next = base.filter(u => u.email !== email);
+        const ok = await gasSaveAllowedUsers(next);
+        if (ok) set({ allowedUsers: next });
+        return ok;
+      },
 
       addMember: (m) => set(s => ({ members: [...s.members, m] })),
       updateMember: (m) => set(s => ({ members: s.members.map(x => x.id === m.id ? m : x) })),
@@ -482,7 +506,7 @@ useDataStore.subscribe((state, prev) => {
     state.routes !== prev.routes ||
     state.routeStops !== prev.routeStops ||
     state.dailyOverrides !== prev.dailyOverrides ||
-    state.allowedUsers !== prev.allowedUsers ||
+    // allowedUsersは管理者設定の操作時にドライブへ直接書き込むため、ここでは監視しない
     state.weeklyDayOverrides !== prev.weeklyDayOverrides ||
     state.shiftAbsences !== prev.shiftAbsences ||
     state.shiftExtras !== prev.shiftExtras;

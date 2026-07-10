@@ -9,6 +9,8 @@ export function AdminPage() {
   const [newName, setNewName] = useState('');
   const [newIsAdmin, setNewIsAdmin] = useState(false);
   const [error, setError] = useState('');
+  // ドライブへの書き込み中はボタンを無効化する
+  const [saving, setSaving] = useState(false);
   // 表示名のインライン編集
   const [editingEmail, setEditingEmail] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
@@ -17,26 +19,49 @@ export function AdminPage() {
     return <Navigate to="/" replace />;
   }
 
-  const handleAdd = () => {
-    if (!newEmail.trim()) return;
+  const SAVE_FAILED = 'ドライブへの保存に失敗しました。通信環境を確認してもう一度お試しください';
+
+  const handleAdd = async () => {
+    if (!newEmail.trim() || saving) return;
     if (allowedUsers.find(u => u.email === newEmail.trim())) {
       setError('このメールアドレスはすでに登録されています');
       return;
     }
-    addAllowedUser({
+    setSaving(true);
+    setError('');
+    const ok = await addAllowedUser({
       email: newEmail.trim(),
       name: newName.trim() || newEmail.trim(),
       addedAt: new Date().toISOString(),
       isAdmin: newIsAdmin,
     });
+    setSaving(false);
+    if (!ok) {
+      setError(SAVE_FAILED);
+      return;
+    }
     setNewEmail('');
     setNewName('');
     setNewIsAdmin(false);
-    setError('');
   };
 
-  const handleToggleAdmin = (email: string, currentIsAdmin: boolean) => {
-    updateAllowedUser(email, { isAdmin: !currentIsAdmin });
+  const handleToggleAdmin = async (email: string, currentIsAdmin: boolean) => {
+    if (saving) return;
+    setSaving(true);
+    setError('');
+    const ok = await updateAllowedUser(email, { isAdmin: !currentIsAdmin });
+    setSaving(false);
+    if (!ok) setError(SAVE_FAILED);
+  };
+
+  const handleRemove = async (email: string) => {
+    if (saving) return;
+    if (!confirm(`${email} を削除しますか？\nこのアドレスではログインできなくなります。`)) return;
+    setSaving(true);
+    setError('');
+    const ok = await removeAllowedUser(email);
+    setSaving(false);
+    if (!ok) setError(SAVE_FAILED);
   };
 
   const startEditName = (email: string, name: string) => {
@@ -44,9 +69,17 @@ export function AdminPage() {
     setEditName(name);
   };
 
-  const saveEditName = () => {
+  const saveEditName = async () => {
+    if (saving) return;
     if (editingEmail && editName.trim()) {
-      updateAllowedUser(editingEmail, { name: editName.trim() });
+      setSaving(true);
+      setError('');
+      const ok = await updateAllowedUser(editingEmail, { name: editName.trim() });
+      setSaving(false);
+      if (!ok) {
+        setError(SAVE_FAILED);
+        return; // 編集状態を維持して再試行できるようにする
+      }
     }
     setEditingEmail(null);
     setEditName('');
@@ -101,19 +134,23 @@ export function AdminPage() {
             {error && <p className="text-xs text-red-500">{error}</p>}
             <button
               onClick={handleAdd}
-              disabled={!newEmail.trim()}
+              disabled={!newEmail.trim() || saving}
               className="flex items-center gap-2 px-4 py-2 bg-purple-500 text-white rounded-lg text-sm font-medium hover:bg-purple-600 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              <Plus size={16} /> 追加する
+              <Plus size={16} /> {saving ? '保存中...' : '追加する'}
             </button>
           </div>
         </div>
 
         {/* User list */}
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
-          <div className="px-6 py-4 border-b border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-gray-900">許可ユーザー一覧 ({allowedUsers.length}件)</h2>
+            {saving && <span className="text-xs text-purple-500">ドライブに保存中...</span>}
           </div>
+          {error && (
+            <div className="px-6 py-2.5 bg-red-50 border-b border-red-100 text-xs text-red-600">{error}</div>
+          )}
           <div className="divide-y divide-gray-100">
             {allowedUsers.map(user => {
               const isSelf = user.email === currentUser.email;
@@ -138,7 +175,7 @@ export function AdminPage() {
                           />
                           <button
                             onClick={saveEditName}
-                            disabled={!editName.trim()}
+                            disabled={!editName.trim() || saving}
                             className="p-1.5 text-green-600 hover:bg-green-50 rounded cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                             title="保存"
                           >
@@ -179,7 +216,7 @@ export function AdminPage() {
                   {/* Admin toggle */}
                   <button
                     onClick={() => handleToggleAdmin(user.email, user.isAdmin)}
-                    disabled={isSelf}
+                    disabled={isSelf || saving}
                     title={isSelf ? '自分の権限は変更できません' : user.isAdmin ? '管理者権限を解除' : '管理者権限を付与'}
                     className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
                       user.isAdmin
@@ -192,8 +229,8 @@ export function AdminPage() {
                   </button>
 
                   <button
-                    onClick={() => removeAllowedUser(user.email)}
-                    disabled={isSelf}
+                    onClick={() => handleRemove(user.email)}
+                    disabled={isSelf || saving}
                     className="p-1.5 text-gray-400 hover:text-red-500 cursor-pointer hover:bg-red-50 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                     title={isSelf ? '自分自身は削除できません' : '削除'}
                   >

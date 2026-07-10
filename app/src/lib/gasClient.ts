@@ -13,7 +13,8 @@ export interface GASData {
   routes: Route[];
   routeStops: RouteStop[];
   dailyOverrides: DailyOverride[];
-  allowedUsers: AllowedUser[];
+  // 書き込み時は原則含めない（管理者設定のgasSaveAllowedUsersで直接保存する）
+  allowedUsers?: AllowedUser[];
   // 週次一覧の配置（曜日×車両ごとの利用者配置・手動時間）。他アカウント・他端末と共有するためドライブに保存
   weeklyDayOverrides?: WeeklyDayOverride[];
   // 利用者シフト（出欠・振替）と日次稼働率レポート
@@ -82,6 +83,24 @@ export async function gasGetAll(): Promise<GASData | null> {
     return data;
   } catch {
     return null;
+  }
+}
+
+// ログイン許可リストだけを即時保存する（管理者設定の追加・変更・削除用）。
+// GAS側はペイロードに含まれるコレクションだけを書き換えるため、他のデータには影響しない
+export async function gasSaveAllowedUsers(allowedUsers: AllowedUser[]): Promise<boolean> {
+  // 空リストを書き込むとシートが丸ごと消え、誰もログインできなくなるため拒否する
+  if (allowedUsers.length === 0) return false;
+  try {
+    const res = await fetch(`${GAS_URL}?action=saveAllData`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ allowedUsers }),
+    });
+    const json = await res.json();
+    return !!json.ok;
+  } catch {
+    return false;
   }
 }
 
