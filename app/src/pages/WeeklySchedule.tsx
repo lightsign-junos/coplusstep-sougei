@@ -116,6 +116,8 @@ export function WeeklySchedule() {
         dayLabel: o.dayLabel,
         type: 'add',
         row: o.row,
+        // 手動調整した乗車時間もそのまま引き継ぐ（落とすと自動計算に戻り「修正前」の表になってしまう）
+        manualTime: o.manualTime,
       });
     });
     // 曜日ごとの運転手・添乗員設定も前週から複製
