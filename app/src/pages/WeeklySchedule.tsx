@@ -676,13 +676,15 @@ export function WeeklySchedule() {
                               </span>
                             )}
                             <div
-                              className="h-[52px] flex flex-col items-center justify-center px-2 overflow-hidden transition-opacity duration-150"
+                              className="cell-inner h-[52px] flex flex-col items-center justify-center px-2 overflow-hidden transition-opacity duration-150"
                               style={{ opacity: dragging && !isDropTarget ? 0.25 : 1 }}
                             >
                             {member ? (
                               absent ? (
                                 <div className="cell-line text-red-400">
-                                  <div className="cell-name line-through text-[11px]">{displayName(member)}<span className="text-[9px] ml-0.5">様</span></div>
+                                  <div className={`cell-name line-through text-[11px] ${
+                                    displayName(member).length >= 5 ? 'cell-name-len5' : displayName(member).length === 4 ? 'cell-name-len4' : ''
+                                  }`}>{displayName(member)}<span className="text-[9px] ml-0.5">様</span></div>
                                   <div className="cell-time text-[10px] font-bold">欠席</div>
                                 </div>
                               ) : (
@@ -711,9 +713,12 @@ export function WeeklySchedule() {
                                     size={11}
                                     className="absolute -left-1 top-1/2 -translate-y-1/2 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity no-print"
                                   />
-                                  {/* 同姓判別の読み仮名（例：佐々木た）が省略記号で消えないよう、長い名前は縮小して必ず全部表示する */}
+                                  {/* 同姓判別の読み仮名（例：佐々木た）が省略記号で消えないよう、長い名前は縮小して必ず全部表示する
+                                      印刷時も同様に文字数に応じて縮小する（cell-name-len4/len5はindex.cssの@media printで定義） */}
                                   <div className={`cell-name font-medium text-gray-800 leading-tight whitespace-nowrap text-center overflow-hidden ${
                                     displayName(member).length >= 4 ? 'text-[11px]' : 'text-[14px]'
+                                  } ${
+                                    displayName(member).length >= 5 ? 'cell-name-len5' : displayName(member).length === 4 ? 'cell-name-len4' : ''
                                   }`}>
                                     {displayName(member)}<span className="print-sama text-[10px] text-gray-500 ml-0.5">様</span>
                                   </div>

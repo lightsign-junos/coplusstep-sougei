@@ -119,6 +119,19 @@ body {
   .print-table-wrap table td .cell-name {
     font-size: 9pt !important;
   }
+  /* 同姓判別のひらがな付きの長い名前（例: 佐々木た）は、列が狭い週でも
+     最後の1文字が絶対に切れないよう文字数に応じて縮小する */
+  .print-table-wrap table td .cell-name-len4 {
+    font-size: 7pt !important;
+  }
+  .print-table-wrap table td .cell-name-len5 {
+    font-size: 6pt !important;
+  }
+  /* 画面用の左右余白は印刷では名前の幅を圧迫するので最小にする */
+  .print-table-wrap table td .cell-inner {
+    padding-left: 1px !important;
+    padding-right: 1px !important;
+  }
   /* 時間は自動/手動を色で分けず統一。専用クラスで幅いっぱい中央揃え */
   .print-table-wrap table td .cell-time {
     color: #1f2937 !important;
