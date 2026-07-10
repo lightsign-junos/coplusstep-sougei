@@ -54,9 +54,9 @@ const seedRouteStops: RouteStop[] = [
   { id: 'rs6', routeId: 'r2', memberId: 'm6', locationId: 'l6', order: 3, scheduledTime: '09:15' },
 ];
 
+// 初期値は管理者のみ（ここに入れたアドレスはドライブ未読込時でもログインできてしまうため最小限にする）
 const seedAllowedUsers: AllowedUser[] = [
   { email: ADMIN_EMAIL, name: 'JUNOS', addedAt: '2024-01-01', isAdmin: true },
-  { email: 'staff1@coplus-step.jp', name: 'スタッフ1', addedAt: '2024-01-01', isAdmin: false },
 ];
 
 interface DataState {
@@ -294,6 +294,12 @@ export const useDataStore = create<DataState>()(
               gasLoaded: true,
               gasSynced: true,
             });
+            // 許可リストから削除された人はログイン状態を解除する
+            // （ログイン済みセッションが残り続けて入れてしまうのを防ぐ）
+            const cu = get().currentUser;
+            if (cu && !(data.allowedUsers ?? []).some(u => u.email === cu.email)) {
+              set({ currentUser: null });
+            }
           } else {
             // GASが空（初回セットアップ等）: gasSyncedはtrueにせず自動保存を止める。
             // 本当に初回セットアップの場合は手動でのデータ投入が必要
@@ -305,16 +311,12 @@ export const useDataStore = create<DataState>()(
       },
 
       login: async (user) => {
-        let allowed = get().allowedUsers.find(u => u.email === user.email);
-        // 手元のリストに無くても、ドライブ読み込みが未完了/失敗しているだけの
-        // 可能性があるため、最新の許可リストを取得し直してから判定する
-        if (!allowed) {
-          const data = await gasGetAll();
-          if (data?.allowedUsers?.length) {
-            set({ allowedUsers: data.allowedUsers });
-            allowed = data.allowedUsers.find(u => u.email === user.email);
-          }
-        }
+        // 必ずドライブの最新の許可リストで判定する。ブラウザに残った古いリストを
+        // 先に見てしまうと、削除済みのアドレスでもログインできてしまうため
+        const data = await gasGetAll();
+        const list = data?.allowedUsers?.length ? data.allowedUsers : get().allowedUsers;
+        if (data?.allowedUsers?.length) set({ allowedUsers: data.allowedUsers });
+        const allowed = list.find(u => u.email === user.email);
         if (!allowed) return false;
         const authUser: AuthUser = { ...user, isAdmin: allowed.isAdmin };
         set({ currentUser: authUser });
