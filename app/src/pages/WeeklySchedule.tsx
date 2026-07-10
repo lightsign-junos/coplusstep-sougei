@@ -25,8 +25,9 @@ export function WeeklySchedule() {
   const {
     vehicles, routes, routeStops, members, memberLocations, staff, dailyOverrides, weeklyDayOverrides,
     addRouteStop, deleteRouteStop,
-    updateRoute, addWeeklyDayOverride, removeWeeklyDayOverride, clearWeekOverrides,
+    addWeeklyDayOverride, removeWeeklyDayOverride, clearWeekOverrides,
     shiftExtras, addShiftExtra, setWeeklyOverrideTime, setWeeklyOverrideRow,
+    weeklyStaffOverrides, setWeeklyStaff,
   } = useDataStore();
 
   const allActiveVehicles = vehicles.filter(v => v.active);
@@ -37,7 +38,7 @@ export function WeeklySchedule() {
   const [weekBase, setWeekBase] = useState(new Date());
   const [copyToast, setCopyToast] = useState(false);
   const [picking, setPicking] = useState<{ dayLabel: string; vehicleId: string; rowIdx: number } | null>(null);
-  const [editingStaff, setEditingStaff] = useState<{ vehicleId: string; field: 'driverId' | 'attendantId' } | null>(null);
+  const [editingStaff, setEditingStaff] = useState<{ vehicleId: string; field: 'driverId' | 'attendantId'; dayLabel: string } | null>(null);
   // 乗車時間の手動編集モーダル
   const [editingTime, setEditingTime] = useState<{ overrideId: string; memberName: string; current: string; isManual: boolean } | null>(null);
   const [timeInput, setTimeInput] = useState('');
@@ -117,6 +118,13 @@ export function WeeklySchedule() {
         row: o.row,
       });
     });
+    // 曜日ごとの運転手・添乗員設定も前週から複製
+    weeklyStaffOverrides
+      .filter(o => o.weekKey === prevWeekKey)
+      .forEach(o => {
+        if (o.driverId) setWeeklyStaff(weekKey, o.vehicleId, o.dayLabel, 'driverId', o.driverId);
+        if (o.attendantId) setWeeklyStaff(weekKey, o.vehicleId, o.dayLabel, 'attendantId', o.attendantId);
+      });
     setCopyToast(true);
     setTimeout(() => setCopyToast(false), 2500);
   };
@@ -438,6 +446,15 @@ export function WeeklySchedule() {
   const pickingVehicle = picking ? allActiveVehicles.find(v => v.id === picking.vehicleId) : null;
   const editingRoute = editingStaff ? goRoutes.find(r => r.vehicleId === editingStaff.vehicleId) : null;
 
+  // その曜日の運転手/添乗員（曜日ごとの設定があればそれを、なければ便のデフォルトを使う）
+  const staffIdFor = (dayLabel: string, vehicleId: string, field: 'driverId' | 'attendantId'): string => {
+    const ov = weeklyStaffOverrides.find(
+      o => o.weekKey === weekKey && o.vehicleId === vehicleId && o.dayLabel === dayLabel
+    );
+    const route = goRoutes.find(r => r.vehicleId === vehicleId);
+    return ov?.[field] ?? route?.[field] ?? '';
+  };
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -574,8 +591,8 @@ export function WeeklySchedule() {
                         <td key={`drv-${d.label}-${v.id}`} className="border border-gray-300 px-2 py-1 text-center text-xs text-gray-700">
                           <div className="cell-line">
                             <div className="row-label text-gray-400 text-[10px]">運転</div>
-                            <div className="no-print cursor-pointer hover:text-blue-600 transition-colors" onClick={() => route && setEditingStaff({ vehicleId: v.id, field: 'driverId' })}>
-                              {route ? getStaffName(route.driverId) : '―'}
+                            <div className="no-print cursor-pointer hover:text-blue-600 transition-colors" onClick={() => route && setEditingStaff({ vehicleId: v.id, field: 'driverId', dayLabel: d.label })}>
+                              {route ? getStaffName(staffIdFor(d.label, v.id, 'driverId')) : '―'}
                             </div>
                           </div>
                         </td>
@@ -591,8 +608,8 @@ export function WeeklySchedule() {
                         <td key={`att-${d.label}-${v.id}`} className="border border-gray-300 px-2 py-1 text-center text-xs text-gray-700">
                           <div className="cell-line">
                             <div className="row-label text-gray-400 text-[10px]">添乗</div>
-                            <div className="no-print cursor-pointer hover:text-blue-600 transition-colors" onClick={() => route && setEditingStaff({ vehicleId: v.id, field: 'attendantId' })}>
-                              {route ? getStaffName(route.attendantId) : '―'}
+                            <div className="no-print cursor-pointer hover:text-blue-600 transition-colors" onClick={() => route && setEditingStaff({ vehicleId: v.id, field: 'attendantId', dayLabel: d.label })}>
+                              {route ? getStaffName(staffIdFor(d.label, v.id, 'attendantId')) : '―'}
                             </div>
                           </div>
                         </td>
@@ -873,20 +890,23 @@ export function WeeklySchedule() {
         </Modal>
       )}
 
-      {/* Staff picker modal (table view) */}
+      {/* Staff picker modal (table view) — 曜日×車両ごとに設定 */}
       {editingStaff && editingRoute && (
         <Modal
-          title={editingStaff.field === 'driverId' ? '運転手を変更' : '添乗員を変更'}
+          title={`${editingStaff.dayLabel}曜日の${editingStaff.field === 'driverId' ? '運転手' : '添乗員'}を変更`}
           onClose={() => setEditingStaff(null)}
           size="sm"
         >
           <div className="space-y-2">
             {staff.filter(s => s.active).map(s => {
-              const isCurrent = editingRoute[editingStaff.field] === s.id;
+              const isCurrent = staffIdFor(editingStaff.dayLabel, editingStaff.vehicleId, editingStaff.field) === s.id;
               return (
                 <button
                   key={s.id}
-                  onClick={() => { updateRoute({ ...editingRoute, [editingStaff.field]: s.id }); setEditingStaff(null); }}
+                  onClick={() => {
+                    setWeeklyStaff(weekKey, editingStaff.vehicleId, editingStaff.dayLabel, editingStaff.field, s.id);
+                    setEditingStaff(null);
+                  }}
                   className={`w-full text-left px-4 py-3 rounded-xl border cursor-pointer transition-colors flex items-center justify-between ${isCurrent ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-gray-100 hover:bg-gray-50'}`}
                 >
                   <span className="font-medium text-sm">{s.name}</span>
@@ -894,6 +914,16 @@ export function WeeklySchedule() {
                 </button>
               );
             })}
+            {/* 曜日ごとの設定を解除して便のデフォルト担当に戻す */}
+            <button
+              onClick={() => {
+                setWeeklyStaff(weekKey, editingStaff.vehicleId, editingStaff.dayLabel, editingStaff.field, null);
+                setEditingStaff(null);
+              }}
+              className="w-full text-left px-4 py-3 rounded-xl border border-dashed border-gray-200 text-gray-500 cursor-pointer transition-colors hover:bg-gray-50 text-sm"
+            >
+              デフォルトに戻す（{getStaffName(editingRoute[editingStaff.field])}）
+            </button>
           </div>
         </Modal>
       )}

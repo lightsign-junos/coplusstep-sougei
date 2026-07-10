@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, startOfWeek } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { Calendar, Users, Car, AlertTriangle, ChevronRight, UserX } from 'lucide-react';
 
@@ -13,7 +13,7 @@ const DAYS_JP = ['日', '月', '火', '水', '木', '金', '土'];
 export function Dashboard() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { routes, routeStops, members, staff, vehicles, dailyOverrides, addDailyOverride } = useDataStore();
+  const { routes, routeStops, members, staff, vehicles, dailyOverrides, addDailyOverride, weeklyStaffOverrides } = useDataStore();
 
   const todayReal = new Date();
   const todayStr = format(todayReal, 'yyyy-MM-dd');
@@ -52,6 +52,15 @@ export function Dashboard() {
 
   const getMember = (id: string) => members.find(m => m.id === id);
   const getStaffName = (id: string) => staff.find(s => s.id === id)?.name ?? '未設定';
+
+  // その日の運転手/添乗員（週次一覧で曜日ごとに設定されていればそれを優先）
+  const selectedWeekKey = format(startOfWeek(selectedDate, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+  const staffIdFor = (vehicleId: string, field: 'driverId' | 'attendantId', fallback: string): string => {
+    const ov = weeklyStaffOverrides.find(
+      o => o.weekKey === selectedWeekKey && o.vehicleId === vehicleId && o.dayLabel === dayLabel
+    );
+    return ov?.[field] ?? fallback;
+  };
 
   const handleAddAbsent = () => {
     if (!absentMemberId || !absentRouteId) return;
@@ -170,8 +179,8 @@ export function Dashboard() {
                   </div>
                   {route ? (
                     <div className="text-xs opacity-80 space-y-0.5">
-                      <p>運転：{getStaffName(route.driverId)}</p>
-                      <p>添乗：{getStaffName(route.attendantId)}</p>
+                      <p>運転：{getStaffName(staffIdFor(vehicle.id, 'driverId', route.driverId))}</p>
+                      <p>添乗：{getStaffName(staffIdFor(vehicle.id, 'attendantId', route.attendantId))}</p>
                     </div>
                   ) : (
                     <p className="text-xs opacity-70">本日ルートなし</p>

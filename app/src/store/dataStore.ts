@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type {
   Member, MemberLocation, Staff, Vehicle,
-  Route, RouteStop, DailyOverride, AllowedUser, AuthUser, WeeklyDayOverride
+  Route, RouteStop, DailyOverride, AllowedUser, AuthUser, WeeklyDayOverride, WeeklyStaffOverride
 } from '../types';
 import { gasGetAll, gasSaveAll, gasSaveAllowedUsers } from '../lib/gasClient';
 
@@ -75,6 +75,8 @@ interface DataState {
   dailyOverrides: DailyOverride[];
   // Weekly day overrides (defaultDaysを変えずに週単位で追加・除外)
   weeklyDayOverrides: WeeklyDayOverride[];
+  // 曜日×車両ごとの運転手・添乗員の割り当て（未設定は便のデフォルト）
+  weeklyStaffOverrides: WeeklyStaffOverride[];
   // 利用者シフト（カレンダー）の欠勤マーク。date="yyyy-MM-dd"。記録がない人は出勤扱い
   shiftAbsences: { date: string; memberId: string }[];
   // 振替・臨時利用（その日だけ追加で来る人）
@@ -139,6 +141,8 @@ interface DataState {
   setWeeklyOverrideTime: (id: string, time: string | null) => void;
   // 週次一覧のマス位置変更（ドラッグ&ドロップ用）
   setWeeklyOverrideRow: (id: string, row: number) => void;
+  // 曜日×車両ごとの運転手・添乗員の設定（staffId=null でその曜日の設定を解除し便のデフォルトに戻す）
+  setWeeklyStaff: (weekKey: string, vehicleId: string, dayLabel: string, field: 'driverId' | 'attendantId', staffId: string | null) => void;
 
   // 利用者シフトの出欠
   markShiftAbsent: (date: string, memberId: string) => void;
@@ -229,6 +233,7 @@ function scheduleGASSave() {
         // allowedUsersは含めない: 古い画面の一括保存が最新の許可リストを
         // 巻き戻さないよう、書き込みは管理者設定の直接保存に限定する
         weeklyDayOverrides: s.weeklyDayOverrides,
+        weeklyStaffOverrides: s.weeklyStaffOverrides,
         shiftAbsences: s.shiftAbsences,
         shiftExtras: s.shiftExtras,
         attendanceDaily: computeAttendanceDaily(s),
@@ -255,6 +260,7 @@ export const useDataStore = create<DataState>()(
       routeStops: seedRouteStops,
       dailyOverrides: [],
       weeklyDayOverrides: [],
+      weeklyStaffOverrides: [],
       shiftAbsences: [],
       shiftExtras: [],
       velWeeks: {},
@@ -292,6 +298,7 @@ export const useDataStore = create<DataState>()(
               dailyOverrides: data.dailyOverrides ?? [],
               allowedUsers: data.allowedUsers ?? [],
               weeklyDayOverrides: data.weeklyDayOverrides ?? [],
+              weeklyStaffOverrides: data.weeklyStaffOverrides ?? [],
               shiftAbsences: data.shiftAbsences ?? [],
               shiftExtras: data.shiftExtras ?? [],
               gasLoaded: true,
@@ -409,7 +416,10 @@ export const useDataStore = create<DataState>()(
         shiftAbsences: s.shiftAbsences.filter(a => !(a.date === date && a.memberId === memberId)),
       })),
       removeWeeklyDayOverride: (id) => set(s => ({ weeklyDayOverrides: s.weeklyDayOverrides.filter(x => x.id !== id) })),
-      clearWeekOverrides: (weekKey) => set(s => ({ weeklyDayOverrides: s.weeklyDayOverrides.filter(x => x.weekKey !== weekKey) })),
+      clearWeekOverrides: (weekKey) => set(s => ({
+        weeklyDayOverrides: s.weeklyDayOverrides.filter(x => x.weekKey !== weekKey),
+        weeklyStaffOverrides: s.weeklyStaffOverrides.filter(x => x.weekKey !== weekKey),
+      })),
       setWeeklyOverrideTime: (id, time) => set(s => ({
         weeklyDayOverrides: s.weeklyDayOverrides.map(o =>
           o.id === id ? { ...o, manualTime: time ?? undefined } : o
@@ -420,6 +430,27 @@ export const useDataStore = create<DataState>()(
           o.id === id ? { ...o, row } : o
         ),
       })),
+      setWeeklyStaff: (weekKey, vehicleId, dayLabel, field, staffId) => set(s => {
+        const existing = s.weeklyStaffOverrides.find(
+          o => o.weekKey === weekKey && o.vehicleId === vehicleId && o.dayLabel === dayLabel
+        );
+        if (existing) {
+          const updated = { ...existing, [field]: staffId ?? undefined };
+          // 両方とも未設定になったらエントリごと削除
+          if (!updated.driverId && !updated.attendantId) {
+            return { weeklyStaffOverrides: s.weeklyStaffOverrides.filter(o => o.id !== existing.id) };
+          }
+          return { weeklyStaffOverrides: s.weeklyStaffOverrides.map(o => o.id === existing.id ? updated : o) };
+        }
+        if (!staffId) return {};
+        return {
+          weeklyStaffOverrides: [
+            ...s.weeklyStaffOverrides,
+            // 前週コピーで同一ミリ秒に連続作成されてもIDが衝突しないよう乱数を付与
+            { id: `wso-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, weekKey, vehicleId, dayLabel, [field]: staffId },
+          ],
+        };
+      }),
 
       setVelEnabled: (weekStart, enabled) => set(s => ({ velWeeks: { ...s.velWeeks, [weekStart]: enabled } })),
       isVelEnabled: (weekStart) => get().velWeeks[weekStart] ?? false,
@@ -508,6 +539,7 @@ useDataStore.subscribe((state, prev) => {
     state.dailyOverrides !== prev.dailyOverrides ||
     // allowedUsersは管理者設定の操作時にドライブへ直接書き込むため、ここでは監視しない
     state.weeklyDayOverrides !== prev.weeklyDayOverrides ||
+    state.weeklyStaffOverrides !== prev.weeklyStaffOverrides ||
     state.shiftAbsences !== prev.shiftAbsences ||
     state.shiftExtras !== prev.shiftExtras;
   if (changed) scheduleGASSave();

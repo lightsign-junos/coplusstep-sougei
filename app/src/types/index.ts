@@ -117,6 +117,17 @@ export interface WeekSchedule {
   velEnabled: boolean;
 }
 
+// 週次一覧での曜日×車両ごとの運転手・添乗員の割り当て
+// 未設定の項目は便（Route）のデフォルト担当者を使う
+export interface WeeklyStaffOverride {
+  id: string;
+  weekKey: string;    // その週の月曜日 YYYY-MM-DD
+  vehicleId: string;
+  dayLabel: string;   // '月'〜'土'
+  driverId?: string;
+  attendantId?: string;
+}
+
 // 週次一覧での1週間限定の追加・除外（defaultDaysには影響しない）
 export interface WeeklyDayOverride {
   id: string;
