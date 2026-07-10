@@ -19,7 +19,7 @@ export function LoginPage() {
           headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
         });
         const userInfo = await res.json();
-        const success = login({ email: userInfo.email, name: userInfo.name, isAdmin: false });
+        const success = await login({ email: userInfo.email, name: userInfo.name, isAdmin: false });
         if (success) {
           navigate('/');
         } else {

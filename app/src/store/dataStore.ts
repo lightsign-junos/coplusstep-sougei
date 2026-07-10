@@ -92,7 +92,7 @@ interface DataState {
   initFromGAS: () => Promise<void>;
 
   // Auth actions
-  login: (user: AuthUser) => boolean;
+  login: (user: AuthUser) => Promise<boolean>;
   logout: () => void;
   addAllowedUser: (user: AllowedUser) => void;
   updateAllowedUser: (email: string, patch: Partial<AllowedUser>) => void;
@@ -304,8 +304,17 @@ export const useDataStore = create<DataState>()(
         }
       },
 
-      login: (user) => {
-        const allowed = get().allowedUsers.find(u => u.email === user.email);
+      login: async (user) => {
+        let allowed = get().allowedUsers.find(u => u.email === user.email);
+        // 手元のリストに無くても、ドライブ読み込みが未完了/失敗しているだけの
+        // 可能性があるため、最新の許可リストを取得し直してから判定する
+        if (!allowed) {
+          const data = await gasGetAll();
+          if (data?.allowedUsers?.length) {
+            set({ allowedUsers: data.allowedUsers });
+            allowed = data.allowedUsers.find(u => u.email === user.email);
+          }
+        }
         if (!allowed) return false;
         const authUser: AuthUser = { ...user, isAdmin: allowed.isAdmin };
         set({ currentUser: authUser });
