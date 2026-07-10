@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { ShieldCheck, Plus, Trash2, Crown } from 'lucide-react';
+import { ShieldCheck, Plus, Trash2, Crown, Pencil, Check, X } from 'lucide-react';
 import { useDataStore } from '../store/dataStore';
 
 export function AdminPage() {
@@ -9,6 +9,9 @@ export function AdminPage() {
   const [newName, setNewName] = useState('');
   const [newIsAdmin, setNewIsAdmin] = useState(false);
   const [error, setError] = useState('');
+  // 表示名のインライン編集
+  const [editingEmail, setEditingEmail] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
 
   if (!currentUser?.isAdmin) {
     return <Navigate to="/" replace />;
@@ -34,6 +37,19 @@ export function AdminPage() {
 
   const handleToggleAdmin = (email: string, currentIsAdmin: boolean) => {
     updateAllowedUser(email, { isAdmin: !currentIsAdmin });
+  };
+
+  const startEditName = (email: string, name: string) => {
+    setEditingEmail(email);
+    setEditName(name);
+  };
+
+  const saveEditName = () => {
+    if (editingEmail && editName.trim()) {
+      updateAllowedUser(editingEmail, { name: editName.trim() });
+    }
+    setEditingEmail(null);
+    setEditName('');
   };
 
   return (
@@ -108,14 +124,53 @@ export function AdminPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-gray-900 truncate">{user.name}</p>
-                      {user.isAdmin && (
-                        <span className="flex items-center gap-1 text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">
-                          <Crown size={10} /> 管理者
-                        </span>
-                      )}
-                      {isSelf && (
-                        <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">自分</span>
+                      {editingEmail === user.email ? (
+                        <>
+                          <input
+                            value={editName}
+                            onChange={e => setEditName(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') saveEditName();
+                              if (e.key === 'Escape') { setEditingEmail(null); setEditName(''); }
+                            }}
+                            autoFocus
+                            className="border border-purple-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-purple-300 min-w-0 flex-1 max-w-[200px]"
+                          />
+                          <button
+                            onClick={saveEditName}
+                            disabled={!editName.trim()}
+                            className="p-1.5 text-green-600 hover:bg-green-50 rounded cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                            title="保存"
+                          >
+                            <Check size={14} />
+                          </button>
+                          <button
+                            onClick={() => { setEditingEmail(null); setEditName(''); }}
+                            className="p-1.5 text-gray-400 hover:bg-gray-100 rounded cursor-pointer transition-colors"
+                            title="キャンセル"
+                          >
+                            <X size={14} />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-sm font-medium text-gray-900 truncate">{user.name}</p>
+                          <button
+                            onClick={() => startEditName(user.email, user.name)}
+                            className="p-1 text-gray-300 hover:text-purple-500 hover:bg-purple-50 rounded cursor-pointer transition-colors flex-shrink-0"
+                            title="表示名を変更"
+                          >
+                            <Pencil size={12} />
+                          </button>
+                          {user.isAdmin && (
+                            <span className="flex items-center gap-1 text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">
+                              <Crown size={10} /> 管理者
+                            </span>
+                          )}
+                          {isSelf && (
+                            <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">自分</span>
+                          )}
+                        </>
                       )}
                     </div>
                     <p className="text-xs text-gray-400 truncate">{user.email}</p>
