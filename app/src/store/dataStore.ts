@@ -92,6 +92,9 @@ interface DataState {
 
   // GAS sync action
   initFromGAS: () => Promise<void>;
+  // ドライブの最新データを取り込む（他の人の変更を反映する）。
+  // 編集・保存中は手元の変更を消さないようスキップする
+  refreshFromGAS: () => Promise<void>;
 
   // Auth actions
   login: (user: AuthUser) => Promise<boolean>;
@@ -161,6 +164,13 @@ interface DataState {
 let _gasDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 // initFromGASの多重実行防止（StrictMode等で二重に走ると読込→保存の競合が起きる）
 let _gasLoading = false;
+// このセッションで変更されたコレクション名。保存はこれに含まれるものだけを書き込む
+// （古い画面の一括保存が、他の人が変更した別のコレクションを巻き戻すのを防ぐ）
+const _dirtyKeys = new Set<string>();
+// ドライブから取得したデータを反映している間は、変更検知（自動保存）を止める
+let _applyingRemote = false;
+// refreshFromGASの多重実行防止
+let _refreshing = false;
 
 // activeな車両すべてに「行き」の便を保証する（無い車両には自動作成 → 週次一覧で配置可能になる）
 function ensureGoRoutes(routes: Route[], vehicles: Vehicle[]): Route[] {
@@ -215,34 +225,44 @@ function computeAttendanceDaily(s: DataState): { date: string; scheduled: number
   return rows;
 }
 
+// 自動保存で同期するコレクション（allowedUsersは含めない:
+// 書き込みは管理者設定の直接保存に限定して巻き戻しを防ぐ）
+const SYNCED_KEYS = [
+  'members', 'memberLocations', 'staff', 'vehicles', 'routes', 'routeStops',
+  'dailyOverrides', 'weeklyDayOverrides', 'weeklyStaffOverrides',
+  'shiftAbsences', 'shiftExtras',
+] as const;
+
 function scheduleGASSave() {
   if (_gasDebounceTimer) clearTimeout(_gasDebounceTimer);
   useDataStore.setState({ syncStatus: 'saving' });
   _gasDebounceTimer = setTimeout(async () => {
+    _gasDebounceTimer = null;
     const s = useDataStore.getState();
     if (!s.gasSynced) return;
-    try {
-      await gasSaveAll({
-        members: s.members,
-        memberLocations: s.memberLocations,
-        staff: s.staff,
-        vehicles: s.vehicles,
-        routes: s.routes,
-        routeStops: s.routeStops,
-        dailyOverrides: s.dailyOverrides,
-        // allowedUsersは含めない: 古い画面の一括保存が最新の許可リストを
-        // 巻き戻さないよう、書き込みは管理者設定の直接保存に限定する
-        weeklyDayOverrides: s.weeklyDayOverrides,
-        weeklyStaffOverrides: s.weeklyStaffOverrides,
-        shiftAbsences: s.shiftAbsences,
-        shiftExtras: s.shiftExtras,
-        attendanceDaily: computeAttendanceDaily(s),
-      });
+    // このセッションで実際に変更したコレクションだけを書き込む
+    const keys = [..._dirtyKeys];
+    _dirtyKeys.clear();
+    if (keys.length === 0) {
+      useDataStore.setState({ syncStatus: 'idle' });
+      return;
+    }
+    const payload: Record<string, unknown> = {};
+    for (const k of keys) payload[k] = (s as unknown as Record<string, unknown>)[k];
+    // 稼働率レポートは利用者・出欠の変更時のみ再集計して書き出す
+    if (keys.includes('members') || keys.includes('shiftAbsences') || keys.includes('shiftExtras')) {
+      payload.attendanceDaily = computeAttendanceDaily(s);
+    }
+    const ok = await gasSaveAll(payload);
+    if (ok) {
       useDataStore.setState({ syncStatus: 'saved' });
       setTimeout(() => useDataStore.setState({ syncStatus: 'idle' }), 2000);
-    } catch {
+    } else {
+      // 失敗した分は再送対象に戻し、10秒後に自動リトライする
+      keys.forEach(k => _dirtyKeys.add(k));
       useDataStore.setState({ syncStatus: 'error' });
       setTimeout(() => useDataStore.setState({ syncStatus: 'idle' }), 3000);
+      setTimeout(() => { if (_dirtyKeys.size > 0 && !_gasDebounceTimer) scheduleGASSave(); }, 10000);
     }
   }, 1500);
 }
@@ -317,6 +337,52 @@ export const useDataStore = create<DataState>()(
           }
         } finally {
           _gasLoading = false;
+        }
+      },
+
+      refreshFromGAS: async () => {
+        const s = get();
+        // 初回読み込みが済んでいない/進行中は対象外
+        if (!s.gasSynced || _gasLoading || _refreshing) return;
+        // 保存待ち・保存中・未保存の変更がある間は、手元の変更を消さないよう再読込しない
+        if (s.syncStatus !== 'idle' || _dirtyKeys.size > 0) return;
+        _refreshing = true;
+        try {
+          const data = await gasGetAll();
+          if (!data) return;
+          const hasData = (data.members?.length ?? 0) > 0 || (data.routes?.length ?? 0) > 0;
+          if (!hasData) return;
+          // 取得している間に編集が始まっていたら、取得結果は破棄する
+          if (get().syncStatus !== 'idle' || _dirtyKeys.size > 0) return;
+          const nextVehicles = data.vehicles ?? [];
+          const nextRoutes = ensureGoRoutes(data.routes ?? [], nextVehicles);
+          // リモート反映による変更は「このセッションの編集」ではないので自動保存を発火させない
+          _applyingRemote = true;
+          try {
+            set({
+              members: data.members ?? [],
+              memberLocations: data.memberLocations ?? [],
+              staff: data.staff ?? [],
+              vehicles: nextVehicles,
+              routes: nextRoutes,
+              routeStops: data.routeStops ?? [],
+              dailyOverrides: data.dailyOverrides ?? [],
+              allowedUsers: data.allowedUsers ?? [],
+              weeklyDayOverrides: data.weeklyDayOverrides ?? [],
+              weeklyStaffOverrides: data.weeklyStaffOverrides ?? [],
+              shiftAbsences: data.shiftAbsences ?? [],
+              shiftExtras: data.shiftExtras ?? [],
+            });
+          } finally {
+            _applyingRemote = false;
+          }
+          // 許可リストから削除された人はログイン状態を解除する
+          const cu = get().currentUser;
+          if (cu && !(data.allowedUsers ?? []).some(u => u.email === cu.email)) {
+            set({ currentUser: null });
+          }
+        } finally {
+          _refreshing = false;
         }
       },
 
@@ -524,23 +590,23 @@ export const useDataStore = create<DataState>()(
 );
 
 // Auto-save to GAS on data changes (debounced 1.5s)
+// 変更されたコレクション名を記録し、保存時はそれだけを書き込む
+// （allowedUsersは管理者設定の操作時にドライブへ直接書き込むため、ここでは監視しない）
 useDataStore.subscribe((state, prev) => {
+  // ドライブから取得したデータの反映は「このセッションの編集」ではない
+  if (_applyingRemote) return;
   // GASから実データを取得・反映できたセッションでのみ自動保存する
   if (!state.gasSynced) return;
   // GAS読み込み直後のデータ置き換えは「変更」ではないので保存しない
   if (!prev.gasSynced) return;
-  const changed =
-    state.members !== prev.members ||
-    state.memberLocations !== prev.memberLocations ||
-    state.staff !== prev.staff ||
-    state.vehicles !== prev.vehicles ||
-    state.routes !== prev.routes ||
-    state.routeStops !== prev.routeStops ||
-    state.dailyOverrides !== prev.dailyOverrides ||
-    // allowedUsersは管理者設定の操作時にドライブへ直接書き込むため、ここでは監視しない
-    state.weeklyDayOverrides !== prev.weeklyDayOverrides ||
-    state.weeklyStaffOverrides !== prev.weeklyStaffOverrides ||
-    state.shiftAbsences !== prev.shiftAbsences ||
-    state.shiftExtras !== prev.shiftExtras;
+  let changed = false;
+  const st = state as unknown as Record<string, unknown>;
+  const pv = prev as unknown as Record<string, unknown>;
+  for (const key of SYNCED_KEYS) {
+    if (st[key] !== pv[key]) {
+      _dirtyKeys.add(key);
+      changed = true;
+    }
+  }
   if (changed) scheduleGASSave();
 });

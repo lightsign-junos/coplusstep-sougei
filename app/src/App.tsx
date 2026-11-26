@@ -16,9 +16,23 @@ import { useDataStore } from './store/dataStore';
 
 export default function App() {
   const initFromGAS = useDataStore(s => s.initFromGAS);
+  const refreshFromGAS = useDataStore(s => s.refreshFromGAS);
 
   useEffect(() => {
     initFromGAS();
+    // 他の人の変更を取り込む: タブに戻ってきたとき + 60秒ごとにドライブを再読込
+    // （編集・保存中はrefreshFromGAS側でスキップされるので手元の変更は消えない）
+    const onFocus = () => { refreshFromGAS(); };
+    const onVisibility = () => { if (!document.hidden) refreshFromGAS(); };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+    const timer = setInterval(() => { refreshFromGAS(); }, 60_000);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+      clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

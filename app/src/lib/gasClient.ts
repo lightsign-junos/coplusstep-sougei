@@ -112,27 +112,33 @@ export async function gasSaveAllowedUsers(allowedUsers: AllowedUser[]): Promise<
   }
 }
 
-export async function gasSaveAll(data: GASData): Promise<void> {
+// 部分保存対応: 渡されたコレクションだけをドライブへ書き込む。
+// GAS側はペイロードに含まれるシートだけを書き換えるため、含めなかった
+// コレクションは他の人の変更がそのまま残る（古い画面による巻き戻しを防ぐ）
+export async function gasSaveAll(data: Partial<GASData>): Promise<boolean> {
   try {
+    const payload: Record<string, unknown> = { ...data };
     // シートのセルに配列を書くと先頭要素しか残らないため、カンマ区切り文字列で保存する
-    const payload: Record<string, unknown> = {
-      ...data,
-      members: data.members.map(m => ({
+    if (data.members) {
+      payload.members = data.members.map(m => ({
         ...m,
         defaultDays: Array.isArray(m.defaultDays) ? m.defaultDays.join(',') : m.defaultDays,
-      })),
-    };
+      }));
+    }
     // 空配列を送るとGAS側がシートを丸ごと消すため、絶対に空であってはならないマスタは除外する
     for (const key of ['members', 'memberLocations', 'staff', 'vehicles', 'routes'] as const) {
       const v = payload[key];
       if (Array.isArray(v) && v.length === 0) delete payload[key];
     }
-    await fetch(`${GAS_URL}?action=saveAllData`, {
+    const res = await fetch(`${GAS_URL}?action=saveAllData`, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify(payload),
     });
+    const json = await res.json();
+    return !!json.ok;
   } catch {
-    // silent fail — localStorage is the fallback
+    // ネットワーク断などの失敗は呼び出し側に伝えて再送対象にする
+    return false;
   }
 }
